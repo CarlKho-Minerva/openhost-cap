@@ -17,13 +17,15 @@ OpenHost router (TLS + owner auth)
   │ Caddy  :8080   (front proxy)                 │
   │   /cap/*  ─▶ MinIO  :9000  (S3 API, loopback)│──▶ /data/app_archive   video blobs
   │   /*      ─▶ Cap    :3000  (Next.js)         │
-  │ MariaDB  :3306 (loopback, MySQL-compatible)  │──▶ /data/app_data      database + secrets
+  │ MySQL 8  :3306 (loopback)                    │──▶ /data/app_data      database + secrets
   └─────────────────────────────────────────────┘
 ```
 
-- **Cap web** — the official `ghcr.io/capsoftware/cap-web` image. Records in-browser
-  via `getDisplayMedia`/`MediaRecorder`, converts to MP4 client-side, uploads to S3.
-- **MariaDB** — MySQL-compatible database. Cap runs its own migrations on boot.
+- **Cap web** — the official `ghcr.io/capsoftware/cap-web` app artifacts, run on a
+  glibc base. Records in-browser via `getDisplayMedia`/`MediaRecorder`, converts to
+  MP4 client-side, uploads to S3.
+- **MySQL 8** — the database Cap officially targets (its migrations use JSON-function
+  generated columns that MariaDB rejects). Cap runs its own migrations on boot.
 - **MinIO** — S3-compatible object store for the videos. Cap creates + policies the
   bucket on boot.
 - **Caddy** — fronts both on the single routed port and fixes the presigned-URL host
@@ -74,7 +76,7 @@ passes. The `/cap/`, `/s/`, `/embed/` and playback API prefixes are listed in
 
 | Path | Contents | Backed up |
 |------|----------|-----------|
-| `/data/app_data/cap` | MariaDB data + persisted secrets | yes |
+| `/data/app_data/cap` | MySQL 8 data + persisted secrets | yes |
 | `/data/app_archive/cap` | MinIO video blobs | archive tier (upgradable to S3) |
 | `/data/app_temp_data/cap` | in-flight upload scratch | no |
 
