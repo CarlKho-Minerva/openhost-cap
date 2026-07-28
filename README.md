@@ -3,7 +3,7 @@
 [Cap](https://github.com/CapSoftware/cap) — the open-source Loom — packaged as a
 **single self-contained [OpenHost](https://github.com/imbue-openhost) app**.
 Record your screen in the browser, get a shareable link, and keep every byte on
-your own compute. No desktop app, no third-party database, no external S3.
+your own compute. No desktop app, no third-party database, no external S3. Finally!!
 
 ## What's in the box
 
