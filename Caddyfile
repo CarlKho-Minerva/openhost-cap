@@ -1,0 +1,34 @@
+# Front proxy on the single OpenHost-routed port (:8080). The router terminates
+# TLS and forwards plain HTTP here. {$CAP_PUBLIC_HOST} is injected by entrypoint.sh.
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	# Cheap health endpoint — answers 200 even before Cap has finished booting.
+	@health path /_healthz
+	handle @health {
+		respond "ok" 200
+	}
+
+	# Public S3 object access for presigned share/playback + upload URLs.
+	# Path-style bucket route (/cap/*) -> MinIO. Force the upstream Host header to
+	# the signed public host so MinIO's SigV4 presign validation matches, whatever
+	# Host the router forwards.
+	@s3 path /cap/*
+	handle @s3 {
+		reverse_proxy 127.0.0.1:9000 {
+			header_up Host {$CAP_PUBLIC_HOST}
+		}
+	}
+
+	# Everything else -> Cap (Next.js). Pin the forwarded proto/host to the public
+	# HTTPS origin so NextAuth callbacks and absolute URLs are correct.
+	handle {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host {$CAP_PUBLIC_HOST}
+		}
+	}
+}

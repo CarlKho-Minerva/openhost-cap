@@ -1,0 +1,17 @@
+# Catalog entry for the OpenHost App Store.
+# Submitted as apps/cap/app.toml in imbue-openhost/openhost-apps (run generate.py
+# there to regenerate catalog.json, then open the PR).
+[app]
+name = "cap"
+title = "Cap"
+description = "Open-source Loom alternative — record and share screen videos, fully self-hosted."
+repo_url = "https://github.com/CarlKho-Minerva/openhost-cap"
+website_url = "https://cap.so"
+docs_url = "https://github.com/CarlKho-Minerva/openhost-cap#readme"
+tags = ["screen-recording", "video", "loom-alternative", "sharing"]
+categories = ["entertainment", "utility", "data-liberation"]
+# openhost_integration_score intentionally omitted (unrated) for v1. The owner
+# reaches the app through zone auth and shares links that guests view without an
+# account, but Cap still keeps its own login (one-time magic-code from logs), so
+# there is no seamless owner SSO yet. Set the score per SCORING.md after the
+# OPENHOST_OWNER_USERNAME auto-provision bridge lands.

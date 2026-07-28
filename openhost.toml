@@ -1,0 +1,41 @@
+[app]
+name = "cap"
+version = "0.1.0"
+description = "Cap — open-source Loom. Self-contained screen recording + shareable links, all on your own compute."
+
+[runtime.container]
+image = "Dockerfile"
+port = 8080
+
+[routing]
+health_check = "/_healthz"
+# Routes the router serves WITHOUT owner login — this is how anonymous visitors
+# open share links and play videos. Prefix-matched. Mutating API routes keep
+# Cap's own server-side auth, and the video bucket is public-read by design
+# (Loom-style links). Do NOT add "/" here.
+public_paths = [
+    "/_healthz",
+    "/s/",           # share page
+    "/embed/",       # embeddable player
+    "/c/",           # shared collections
+    "/cap/",         # S3 objects (presigned/public video blobs) -> MinIO
+    "/api/playlist", # player manifest / presigned redirect
+    "/api/video",    # video metadata + OG image
+    "/api/thumbnail",# thumbnails
+    "/_next/",       # Next.js runtime chunks + optimized images
+    "/favicon.ico",
+]
+
+[resources]
+# Large instance is ~8 GiB / 4 vCPU — leave headroom for the router + default apps.
+memory_mb = 4096
+cpu_cores = 2.0
+
+[data]
+app_data = true       # MariaDB data + persisted secrets (local, backed up)
+app_temp_data = true  # scratch for in-flight uploads
+app_archive = true    # MinIO video blobs (elastic; operator can upgrade zone to S3/JuiceFS later)
+
+[[links]]
+name = "Dashboard"
+path = "/dashboard"
