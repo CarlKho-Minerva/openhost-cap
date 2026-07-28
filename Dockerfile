@@ -13,6 +13,9 @@
 # --- Cap's official prebuilt web app (Next.js standalone; pure JS, portable) ---
 FROM ghcr.io/capsoftware/cap-web:latest AS capweb
 
+# --- Cap's official media-server (Bun + FFmpeg): transcoding, HLS, thumbnails, Loom import ---
+FROM ghcr.io/capsoftware/cap-media-server:latest AS mediaserver
+
 # --- glibc runtime: MySQL 8 + Node 24 + MinIO + Caddy ---
 FROM ubuntu:24.04
 
@@ -24,7 +27,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        mysql-server-core-8.0 mysql-client-core-8.0 mysql-common \
-       ca-certificates curl xz-utils tar \
+       ffmpeg ca-certificates curl xz-utils tar \
     && id mysql >/dev/null 2>&1 || (groupadd -r mysql && useradd -r -g mysql -s /usr/sbin/nologin mysql) \
     && rm -rf /var/lib/apt/lists/*
 
@@ -48,6 +51,12 @@ COPY --from=capweb /app /app
 # Next's image optimizer needs a glibc-native sharp (the copied one is musl).
 RUN cd /app && npm install --no-audit --no-fund sharp@0.34.5 \
     && node -e "require('sharp'); console.log('sharp glibc OK')"
+
+# Bundled media-server: copy the Bun runtime + the app. Both stages are glibc
+# (Debian/Ubuntu), so the native node-av addon is ABI-compatible; it uses the
+# system ffmpeg installed above. Runs as a loopback process on :3456.
+COPY --from=mediaserver /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=mediaserver /app /opt/media-server
 
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY entrypoint.sh /entrypoint.sh

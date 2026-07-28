@@ -1,6 +1,6 @@
 #!/bin/sh
-# Supervises the bundled services (MySQL 8, MinIO, Caddy) and then execs Cap's
-# Next.js server in the foreground. Cap runs its own DB migrations and creates +
+# Supervises the bundled services (MySQL 8, MinIO, media-server, Caddy) and then
+# runs Cap's Next.js server. Cap runs its own DB migrations and creates +
 # policies the S3 bucket on boot, so this script just stands up the backends,
 # wires the environment, and waits for them to be ready.
 set -eu
@@ -9,7 +9,8 @@ log() { echo "[openhost-cap] $*"; }
 
 APP_DATA="${OPENHOST_APP_DATA_DIR:-/data/app_data/cap}"
 ARCHIVE="${OPENHOST_APP_ARCHIVE_DIR:-/data/app_archive/cap}"
-mkdir -p "$APP_DATA" "$ARCHIVE/minio" /run/mysqld
+APP_TEMP="${OPENHOST_APP_TEMP_DIR:-/data/app_temp_data/cap}"
+mkdir -p "$APP_DATA" "$ARCHIVE/minio" "$APP_TEMP" /run/mysqld
 
 # --- One-time, persisted secrets (stable across restarts; live on backed-up app_data) ---
 SECRETS="$APP_DATA/secrets.env"
@@ -101,11 +102,32 @@ for _ in $(seq 1 60); do
 done
 [ "$ok" = 1 ] || { log "FATAL: MinIO did not become ready"; exit 1; }
 
+# --- Media-server (Bun + FFmpeg) on 127.0.0.1:3456 — transcoding, HLS, thumbnails, Loom import ---
+log "starting media-server"
+# exec in the subshell so MS_PID is bun itself (killable on shutdown). Temp/scratch
+# for in-flight transcodes goes to app_temp_data, not the ephemeral container FS.
+( cd /opt/media-server && exec env PORT=3456 TMPDIR="$APP_TEMP" \
+  MEDIA_SERVER_WEBHOOK_SECRET="$MEDIA_SERVER_WEBHOOK_SECRET" \
+  bun run src/index.ts ) &
+MS_PID=$!
+
+log "waiting for media-server"
+ok=0
+for _ in $(seq 1 60); do
+  curl -fsS -o /dev/null http://127.0.0.1:3456/health && { ok=1; break; }
+  sleep 1
+done
+[ "$ok" = 1 ] || { log "FATAL: media-server did not become ready"; exit 1; }
+
 # --- Cap web environment ---
 export DATABASE_URL="mysql://cap:${MYSQL_PASSWORD}@127.0.0.1:3306/cap"
 export WEB_URL="https://${CAP_PUBLIC_HOST}"
 export NEXTAUTH_URL="https://${CAP_PUBLIC_HOST}"
 export NEXTAUTH_SECRET DATABASE_ENCRYPTION_KEY MEDIA_SERVER_WEBHOOK_SECRET
+# Point Cap at the bundled media-server. The webhook URL is Cap's own origin; the
+# media-server calls back to /api/webhooks/media-server/progress with the shared secret.
+export MEDIA_SERVER_URL="http://127.0.0.1:3456"
+export MEDIA_SERVER_WEBHOOK_URL="http://127.0.0.1:3000"
 export CAP_AWS_BUCKET="cap"
 export CAP_AWS_REGION="us-east-1"
 export CAP_AWS_ACCESS_KEY="${MINIO_ROOT_USER}"
@@ -130,7 +152,7 @@ graceful_stop() {
   log "signal received — shutting down"
   kill "$APP_PID" 2>/dev/null || true
   mysqladmin --socket=/run/mysqld/mysqld.sock -uroot shutdown 2>/dev/null || true
-  kill "$MINIO_PID" "$CADDY_PID" 2>/dev/null || true
+  kill "$MINIO_PID" "$MS_PID" "$CADDY_PID" 2>/dev/null || true
   exit 0
 }
 trap graceful_stop TERM INT
