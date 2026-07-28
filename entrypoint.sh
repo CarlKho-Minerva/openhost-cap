@@ -37,13 +37,15 @@ if [ ! -d "$DATADIR/mysql" ]; then
     --auth-root-authentication-method=normal --skip-test-db >/dev/null 2>&1
 fi
 log "starting MariaDB"
+# --skip-networking=0 forces the TCP listener on (Alpine's MariaDB otherwise comes
+# up socket-only, which the app — connecting via mysql://…@127.0.0.1:3306 — can't use).
 mariadbd --user=root --datadir="$DATADIR" \
   --socket=/run/mysqld/mysqld.sock \
-  --bind-address=127.0.0.1 --port=3306 --skip-name-resolve \
+  --skip-networking=0 --bind-address=127.0.0.1 --port=3306 --skip-name-resolve \
   --innodb-buffer-pool-size=256M --max-connections=200 &
 MYSQL_PID=$!
 
-log "waiting for MariaDB"
+log "waiting for MariaDB socket"
 for _ in $(seq 1 60); do
   mariadb-admin --socket=/run/mysqld/mysqld.sock -uroot ping >/dev/null 2>&1 && break
   sleep 1
@@ -57,6 +59,12 @@ ALTER USER 'cap'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON cap.* TO 'cap'@'%';
 FLUSH PRIVILEGES;
 SQL
+
+log "waiting for MariaDB TCP (as app user)"
+for _ in $(seq 1 60); do
+  mariadb --protocol=tcp -h127.0.0.1 -P3306 -ucap -p"${MYSQL_PASSWORD}" -e "SELECT 1" cap >/dev/null 2>&1 && break
+  sleep 1
+done
 
 # --- MinIO (S3 API) on 127.0.0.1:9000, blobs on app_archive ---
 log "starting MinIO"
