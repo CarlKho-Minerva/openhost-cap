@@ -1,8 +1,8 @@
 #!/bin/sh
-# Supervises the three bundled services (MariaDB, MinIO, Caddy) and then execs
-# Cap's Next.js server in the foreground. Cap itself runs DB migrations and
-# creates + policies the S3 bucket on boot, so this script only has to stand up
-# the backends, wire the environment, and wait for them to be ready.
+# Supervises the bundled services (MySQL 8, MinIO, Caddy) and then execs Cap's
+# Next.js server in the foreground. Cap runs its own DB migrations and creates +
+# policies the S3 bucket on boot, so this script just stands up the backends,
+# wires the environment, and waits for them to be ready.
 set -eu
 
 log() { echo "[openhost-cap] $*"; }
@@ -29,40 +29,41 @@ fi
 # shellcheck disable=SC1090
 set -a; . "$SECRETS"; set +a
 
-# --- MariaDB (MySQL-compatible) on 127.0.0.1:3306, data on app_data ---
-DATADIR="$APP_DATA/mysql"
+# --- MySQL 8 on 127.0.0.1:3306, data on app_data ---
+DATADIR="$APP_DATA/mysql8"
+mkdir -p "$DATADIR"
+chown -R mysql:mysql "$DATADIR" /run/mysqld
 if [ ! -d "$DATADIR/mysql" ]; then
-  log "initializing MariaDB data dir"
-  mariadb-install-db --user=root --datadir="$DATADIR" \
-    --auth-root-authentication-method=normal --skip-test-db >/dev/null 2>&1
+  log "initializing MySQL 8 data dir"
+  mysqld --initialize-insecure --datadir="$DATADIR" --user=mysql
 fi
-log "starting MariaDB"
-# --skip-networking=0 forces the TCP listener on (Alpine's MariaDB otherwise comes
-# up socket-only, which the app — connecting via mysql://…@127.0.0.1:3306 — can't use).
-mariadbd --user=root --datadir="$DATADIR" \
-  --socket=/run/mysqld/mysqld.sock \
-  --skip-networking=0 --bind-address=127.0.0.1 --port=3306 --skip-name-resolve \
+log "starting MySQL"
+mysqld --user=mysql --datadir="$DATADIR" \
+  --socket=/run/mysqld/mysqld.sock --pid-file=/run/mysqld/mysqld.pid \
+  --bind-address=127.0.0.1 --port=3306 --skip-name-resolve \
   --innodb-buffer-pool-size=256M --max-connections=200 &
 MYSQL_PID=$!
 
-log "waiting for MariaDB socket"
-for _ in $(seq 1 60); do
-  mariadb-admin --socket=/run/mysqld/mysqld.sock -uroot ping >/dev/null 2>&1 && break
+log "waiting for MySQL socket"
+for _ in $(seq 1 90); do
+  mysqladmin --socket=/run/mysqld/mysqld.sock -uroot ping >/dev/null 2>&1 && break
   sleep 1
 done
 
 log "ensuring database + application user"
-mariadb --socket=/run/mysqld/mysqld.sock -uroot <<SQL
+# mysql_native_password so the app's plain TCP connection authenticates without TLS
+# (MySQL 8 defaults to caching_sha2, which the mysql2 driver rejects over 127.0.0.1).
+mysql --socket=/run/mysqld/mysqld.sock -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS cap CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'cap'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
-ALTER USER 'cap'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
+CREATE USER IF NOT EXISTS 'cap'@'%' IDENTIFIED WITH mysql_native_password BY '${MYSQL_PASSWORD}';
+ALTER USER 'cap'@'%' IDENTIFIED WITH mysql_native_password BY '${MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON cap.* TO 'cap'@'%';
 FLUSH PRIVILEGES;
 SQL
 
-log "waiting for MariaDB TCP (as app user)"
+log "waiting for MySQL TCP (as app user)"
 for _ in $(seq 1 60); do
-  mariadb --protocol=tcp -h127.0.0.1 -P3306 -ucap -p"${MYSQL_PASSWORD}" -e "SELECT 1" cap >/dev/null 2>&1 && break
+  mysql --protocol=tcp -h127.0.0.1 -P3306 -ucap -p"${MYSQL_PASSWORD}" -e "SELECT 1" cap >/dev/null 2>&1 && break
   sleep 1
 done
 
@@ -75,12 +76,11 @@ MINIO_PID=$!
 
 log "waiting for MinIO"
 for _ in $(seq 1 60); do
-  wget -q -O /dev/null http://127.0.0.1:9000/minio/health/ready && break
+  curl -fsS -o /dev/null http://127.0.0.1:9000/minio/health/ready && break
   sleep 1
 done
 
 # --- Cap web environment ---
-# Public host the OpenHost router serves this app at, e.g. cap.<zone-domain>.
 CAP_PUBLIC_HOST="${OPENHOST_APP_NAME}.${OPENHOST_ZONE_DOMAIN}"
 export CAP_PUBLIC_HOST
 export DATABASE_URL="mysql://cap:${MYSQL_PASSWORD}@127.0.0.1:3306/cap"
@@ -97,6 +97,7 @@ export S3_PUBLIC_ENDPOINT="https://${CAP_PUBLIC_HOST}"
 export S3_INTERNAL_ENDPOINT="http://127.0.0.1:9000"
 export S3_PATH_STYLE="true"
 export NODE_ENV="production"
+export NEXT_SHARP_PATH="/app/node_modules/sharp"
 
 # --- Caddy front proxy on :8080 (the single routed port) ---
 log "starting Caddy front proxy"

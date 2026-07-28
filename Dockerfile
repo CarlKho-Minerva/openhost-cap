@@ -1,31 +1,53 @@
 # syntax=docker.io/docker/dockerfile:1
 #
 # Self-contained OpenHost packaging of Cap (https://github.com/CapSoftware/cap).
-# Layers a bundled MariaDB (MySQL-compatible) + MinIO (S3 API) + Caddy front-proxy
-# onto Cap's official web image, so the whole app runs as ONE rootless container
-# with all data on the OpenHost instance's persistent disk. Nothing leaves the box.
+# Runs the whole open-source Loom as ONE rootless container: Cap's web app +
+# bundled MySQL 8 + MinIO (S3 API) + a Caddy front-proxy, all data on the
+# instance's persistent disk. Nothing leaves the box.
 #
-# Base already contains the built Next.js standalone server at /app/apps/web/server.js,
-# with NEXT_PUBLIC_DOCKER_BUILD=true baked in -> the app auto-runs DB migrations and
-# creates the S3 bucket on boot (see Cap's apps/web/instrumentation.node.ts).
-FROM ghcr.io/capsoftware/cap-web:latest
+# Cap officially requires MySQL 8 — its migrations use JSON-function GENERATED
+# columns that MariaDB rejects — so we run on a glibc base (Ubuntu) with real
+# mysql-server, and reuse Cap's prebuilt (pure-JS) web app artifacts rather than
+# rebuilding the monorepo from source.
 
-USER root
+# --- Cap's official prebuilt web app (Next.js standalone; pure JS, portable) ---
+FROM ghcr.io/capsoftware/cap-web:latest AS capweb
 
-# MariaDB server + client, Caddy front proxy, wget/CA for downloads.
-RUN apk add --no-cache mariadb mariadb-client caddy wget ca-certificates \
-    && mkdir -p /run/mysqld /etc/caddy
+# --- glibc runtime: MySQL 8 + Node 24 + MinIO + Caddy ---
+FROM ubuntu:24.04
 
-# MinIO server binary, matched to the host architecture (VM may be amd64 or arm64).
+ENV DEBIAN_FRONTEND=noninteractive
+
+# MySQL 8 server/client (core packages avoid the systemd/postinst datadir dance),
+# plus tools. mysql-server-core provides /usr/sbin/mysqld; mysql-common creates
+# the `mysql` system user.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       mysql-server-core-8.0 mysql-client-core-8.0 mysql-common \
+       ca-certificates curl xz-utils tar \
+    && id mysql >/dev/null 2>&1 || (groupadd -r mysql && useradd -r -g mysql -s /usr/sbin/nologin mysql) \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 24 (glibc) via NodeSource — matches the version Cap's app was built with.
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version
+
+# MinIO server + Caddy, matched to the host architecture.
 RUN set -eux; \
-    case "$(uname -m)" in \
-      x86_64)  MINARCH=amd64 ;; \
-      aarch64) MINARCH=arm64 ;; \
-      *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;; \
-    esac; \
-    wget -q "https://dl.min.io/server/minio/release/linux-${MINARCH}/minio" -O /usr/local/bin/minio; \
-    chmod +x /usr/local/bin/minio; \
-    /usr/local/bin/minio --version
+    case "$(uname -m)" in x86_64) A=amd64 ;; aarch64) A=arm64 ;; *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;; esac; \
+    curl -fsSL "https://dl.min.io/server/minio/release/linux-${A}/minio" -o /usr/local/bin/minio; \
+    chmod +x /usr/local/bin/minio; /usr/local/bin/minio --version; \
+    curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_${A}.tar.gz" -o /tmp/caddy.tgz; \
+    tar -xzf /tmp/caddy.tgz -C /usr/local/bin caddy; rm /tmp/caddy.tgz; caddy version
+
+# Cap's web app (standalone) lives at /app (server at /app/apps/web/server.js).
+COPY --from=capweb /app /app
+
+# Next's image optimizer needs a glibc-native sharp (the copied one is musl).
+RUN cd /app && npm install --no-audit --no-fund sharp@0.34.5 \
+    && node -e "require('sharp'); console.log('sharp glibc OK')"
 
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY entrypoint.sh /entrypoint.sh
