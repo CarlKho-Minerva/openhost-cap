@@ -29,19 +29,32 @@ fi
 # shellcheck disable=SC1090
 set -a; . "$SECRETS"; set +a
 
+# Public host the router serves this app at, e.g. cap.<zone-domain>. Needed by
+# both Caddy and the app.
+CAP_PUBLIC_HOST="${OPENHOST_APP_NAME}.${OPENHOST_ZONE_DOMAIN}"
+export CAP_PUBLIC_HOST
+
+# --- Caddy front proxy on :8080 FIRST, so /_healthz answers 200 immediately while
+#     the backends (especially MySQL's first-run init) come up. ---
+log "starting Caddy front proxy"
+caddy run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 &
+CADDY_PID=$!
+
 # --- MySQL 8 on 127.0.0.1:3306, data on app_data ---
 DATADIR="$APP_DATA/mysql8"
-mkdir -p "$DATADIR"
-chown -R mysql:mysql "$DATADIR" /run/mysqld
+mkdir -p "$DATADIR" /var/lib/mysql-files
+# Ubuntu's mysqld config sets secure_file_priv=/var/lib/mysql-files; the -core
+# package doesn't create it, so make it (and the datadir/socket dir) exist + owned.
+chown -R mysql:mysql "$DATADIR" /run/mysqld /var/lib/mysql-files
 if [ ! -d "$DATADIR/mysql" ]; then
   log "initializing MySQL 8 data dir"
-  mysqld --initialize-insecure --datadir="$DATADIR" --user=mysql
+  mysqld --initialize-insecure --datadir="$DATADIR" --user=mysql --innodb-use-native-aio=0
 fi
 log "starting MySQL"
 mysqld --user=mysql --datadir="$DATADIR" \
   --socket=/run/mysqld/mysqld.sock --pid-file=/run/mysqld/mysqld.pid \
   --bind-address=127.0.0.1 --port=3306 --skip-name-resolve \
-  --innodb-buffer-pool-size=256M --max-connections=200 &
+  --innodb-use-native-aio=0 --innodb-buffer-pool-size=256M --max-connections=200 &
 MYSQL_PID=$!
 
 log "waiting for MySQL socket"
@@ -81,8 +94,6 @@ for _ in $(seq 1 60); do
 done
 
 # --- Cap web environment ---
-CAP_PUBLIC_HOST="${OPENHOST_APP_NAME}.${OPENHOST_ZONE_DOMAIN}"
-export CAP_PUBLIC_HOST
 export DATABASE_URL="mysql://cap:${MYSQL_PASSWORD}@127.0.0.1:3306/cap"
 export WEB_URL="https://${CAP_PUBLIC_HOST}"
 export NEXTAUTH_URL="https://${CAP_PUBLIC_HOST}"
@@ -98,11 +109,6 @@ export S3_INTERNAL_ENDPOINT="http://127.0.0.1:9000"
 export S3_PATH_STYLE="true"
 export NODE_ENV="production"
 export NEXT_SHARP_PATH="/app/node_modules/sharp"
-
-# --- Caddy front proxy on :8080 (the single routed port) ---
-log "starting Caddy front proxy"
-caddy run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 &
-CADDY_PID=$!
 
 term() { kill "$MYSQL_PID" "$MINIO_PID" "$CADDY_PID" 2>/dev/null || true; }
 trap term TERM INT
