@@ -37,7 +37,8 @@ export CAP_PUBLIC_HOST
 # --- Caddy front proxy on :8080 FIRST, so /_healthz answers 200 immediately while
 #     the backends (especially MySQL's first-run init) come up. ---
 log "starting Caddy front proxy"
-caddy run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 &
+# Logs left on stderr on purpose — a proxy that fails to start should be loud.
+caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
 CADDY_PID=$!
 
 # --- MySQL 8 on 127.0.0.1:3306, data on app_data ---
@@ -87,8 +88,9 @@ done
 # --- MinIO (S3 API) on 127.0.0.1:9000, blobs on app_archive ---
 log "starting MinIO"
 export MINIO_ROOT_USER MINIO_ROOT_PASSWORD
+# Logs left on stdout/stderr on purpose so storage failures surface in `oh app logs`.
 minio server "$ARCHIVE/minio" \
-  --address 127.0.0.1:9000 --console-address 127.0.0.1:9090 >/dev/null 2>&1 &
+  --address 127.0.0.1:9000 --console-address 127.0.0.1:9090 &
 MINIO_PID=$!
 
 log "waiting for MinIO"
@@ -116,10 +118,26 @@ export S3_PATH_STYLE="true"
 export NODE_ENV="production"
 export NEXT_SHARP_PATH="/app/node_modules/sharp"
 
-term() { kill "$MYSQL_PID" "$MINIO_PID" "$CADDY_PID" 2>/dev/null || true; }
-trap term TERM INT
-
-# --- Cap web (foreground). Runs migrations + S3 bucket setup itself on boot. ---
+# --- Cap web. Runs migrations + S3 bucket setup itself on boot. ---
 log "starting Cap web — it will run DB migrations and create the S3 bucket"
 cd /app
-exec env HOSTNAME=0.0.0.0 PORT=3000 node apps/web/server.js
+env HOSTNAME=0.0.0.0 PORT=3000 node apps/web/server.js &
+APP_PID=$!
+
+# Graceful shutdown: on SIGTERM (container stop / reload) stop Cap, then cleanly
+# shut MySQL down so InnoDB flushes before the runtime SIGKILLs us, then the rest.
+graceful_stop() {
+  log "signal received — shutting down"
+  kill "$APP_PID" 2>/dev/null || true
+  mysqladmin --socket=/run/mysqld/mysqld.sock -uroot shutdown 2>/dev/null || true
+  kill "$MINIO_PID" "$CADDY_PID" 2>/dev/null || true
+  exit 0
+}
+trap graceful_stop TERM INT
+
+# Block on Cap; if it exits on its own (e.g. crash), propagate the code so the
+# container restarts instead of hanging.
+wait "$APP_PID"
+code=$?
+log "Cap web exited (code $code)"
+exit "$code"
