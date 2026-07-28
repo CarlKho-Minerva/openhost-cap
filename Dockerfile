@@ -37,7 +37,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 # MinIO server + Caddy, matched to the host architecture.
 RUN set -eux; \
     case "$(uname -m)" in x86_64) A=amd64 ;; aarch64) A=arm64 ;; *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;; esac; \
-    curl -fsSL "https://dl.min.io/server/minio/release/linux-${A}/minio" -o /usr/local/bin/minio; \
+    curl -fsSL "https://dl.min.io/server/minio/release/linux-${A}/archive/minio.RELEASE.2025-09-07T16-13-09Z" -o /usr/local/bin/minio; \
     chmod +x /usr/local/bin/minio; /usr/local/bin/minio --version; \
     curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_${A}.tar.gz" -o /tmp/caddy.tgz; \
     tar -xzf /tmp/caddy.tgz -C /usr/local/bin caddy; rm /tmp/caddy.tgz; caddy version

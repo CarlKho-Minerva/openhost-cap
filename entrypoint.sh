@@ -58,10 +58,12 @@ mysqld --user=mysql --datadir="$DATADIR" \
 MYSQL_PID=$!
 
 log "waiting for MySQL socket"
-for _ in $(seq 1 90); do
-  mysqladmin --socket=/run/mysqld/mysqld.sock -uroot ping >/dev/null 2>&1 && break
+ok=0
+for _ in $(seq 1 120); do
+  mysqladmin --socket=/run/mysqld/mysqld.sock -uroot ping >/dev/null 2>&1 && { ok=1; break; }
   sleep 1
 done
+[ "$ok" = 1 ] || { log "FATAL: MySQL did not start (socket never became ready)"; exit 1; }
 
 log "ensuring database + application user"
 # mysql_native_password so the app's plain TCP connection authenticates without TLS
@@ -75,10 +77,12 @@ FLUSH PRIVILEGES;
 SQL
 
 log "waiting for MySQL TCP (as app user)"
+ok=0
 for _ in $(seq 1 60); do
-  mysql --protocol=tcp -h127.0.0.1 -P3306 -ucap -p"${MYSQL_PASSWORD}" -e "SELECT 1" cap >/dev/null 2>&1 && break
+  mysql --protocol=tcp -h127.0.0.1 -P3306 -ucap -p"${MYSQL_PASSWORD}" -e "SELECT 1" cap >/dev/null 2>&1 && { ok=1; break; }
   sleep 1
 done
+[ "$ok" = 1 ] || { log "FATAL: MySQL TCP not reachable as app user"; exit 1; }
 
 # --- MinIO (S3 API) on 127.0.0.1:9000, blobs on app_archive ---
 log "starting MinIO"
@@ -88,10 +92,12 @@ minio server "$ARCHIVE/minio" \
 MINIO_PID=$!
 
 log "waiting for MinIO"
+ok=0
 for _ in $(seq 1 60); do
-  curl -fsS -o /dev/null http://127.0.0.1:9000/minio/health/ready && break
+  curl -fsS -o /dev/null http://127.0.0.1:9000/minio/health/ready && { ok=1; break; }
   sleep 1
 done
+[ "$ok" = 1 ] || { log "FATAL: MinIO did not become ready"; exit 1; }
 
 # --- Cap web environment ---
 export DATABASE_URL="mysql://cap:${MYSQL_PASSWORD}@127.0.0.1:3306/cap"
