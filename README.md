@@ -53,15 +53,41 @@ oh app reload cap --update --wait
 
 ## First login
 
-The router gates the app behind your zone login. Cap keeps its own login on top —
-on first visit, enter your email, then grab the 6-digit code from the logs (no email
-provider is configured, so Cap prints it):
+There are two gates, both one-time (sessions persist afterwards):
 
-```bash
-oh app logs cap | grep -i "login code"
-```
+1. **Zone login** — the OpenHost router redirects you to your zone's login. Sign in as
+   the space owner. This is what keeps the app private to you.
+2. **Cap login** — Cap has its own email login on top. Enter your email; since no email
+   provider is configured, Cap prints the 6-digit code to the container logs instead of
+   emailing it. Grab it with:
 
-Set `RESEND_API_KEY` + `RESEND_FROM_DOMAIN` later if you want real login emails.
+   ```bash
+   oh app logs cap | grep "Code:" | tail -1
+   ```
+
+Then, on the onboarding screens, click **"Skip to dashboard"** and start recording in the
+browser — no desktop app needed.
+
+> **Nicer login (optional):** set `RESEND_API_KEY` + `RESEND_FROM_DOMAIN` in `entrypoint.sh`
+> to have Cap email the code instead of logging it. The log-code path is a fine default for
+> a single-owner instance since you rarely re-auth.
+
+## Self-hosting notes (Pro, onboarding, desktop app)
+
+Cap's cloud product (cap.so) has Pro tiers, per-seat billing, and a desktop app. **None of
+that applies to a self-hosted build**, and it's not a limitation you're working around —
+it's how Cap is designed:
+
+- **Everything is unlocked.** `userIsPro()` returns `true` whenever the build isn't Cap
+  Cloud (`NEXT_PUBLIC_IS_CAP` unset), so all "Pro" features are on and the billing/upgrade
+  UI is compiled out of the dashboard entirely.
+- **The onboarding "Upgrade to Pro / custom domain / invite team / Download Cap" cards are
+  upstream cloud copy.** They appear once during first-run onboarding and don't apply here
+  (you're already on your own domain; you don't need the desktop app). Click **"Skip to
+  dashboard"** — they don't come back.
+- **Record in the browser.** The dashboard's recorder uses `getDisplayMedia`/`MediaRecorder`,
+  converts to MP4 client-side, and uploads to the bundled MinIO. (A future improvement could
+  make onboarding self-host-aware upstream — a good contribution back to Cap.)
 
 ## How storage + share links work
 
@@ -87,7 +113,9 @@ generated once on first boot and persisted to `app_data`.
 
 - **Server-side transcoding / HLS / Loom import** (Cap's `media-server`). Browser
   recordings convert to MP4 client-side and play via presigned S3, so record → share →
-  view works without it. Add the sidecar later if you want HLS.
+  view works without it. The trade-off is a short client-side conversion delay after you
+  stop recording (the "bit of latency"). Add the Bun/FFmpeg sidecar later for HLS + faster
+  finalization.
 - **Owner SSO bridge.** A future improvement can auto-provision the Cap account from
   `OPENHOST_OWNER_USERNAME` and skip the one-time magic-code login.
 
