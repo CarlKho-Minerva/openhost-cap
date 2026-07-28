@@ -32,7 +32,7 @@ memory_mb = 4096
 cpu_cores = 2.0
 
 [data]
-app_data = true       # MariaDB data + persisted secrets (local, backed up)
+app_data = true       # MySQL 8 data + persisted secrets (local, backed up)
 app_temp_data = true  # scratch for in-flight uploads
 app_archive = true    # MinIO video blobs (elastic; operator can upgrade zone to S3/JuiceFS later)
 
