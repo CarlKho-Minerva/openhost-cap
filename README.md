@@ -7,7 +7,7 @@ your own compute. No desktop app, no third-party database, no external S3. Final
 
 ## What's in the box
 
-One rootless container runs four processes; all data stays on the instance disk:
+One rootless container runs five processes; all data stays on the instance disk:
 
 ```
 OpenHost router (TLS + owner auth)
@@ -17,7 +17,8 @@ OpenHost router (TLS + owner auth)
   │ Caddy  :8080   (front proxy)                 │
   │   /cap/*  ─▶ MinIO  :9000  (S3 API, loopback)│──▶ /data/app_archive   video blobs
   │   /*      ─▶ Cap    :3000  (Next.js)         │
-  │ MySQL 8  :3306 (loopback)                    │──▶ /data/app_data      database + secrets
+  │ MySQL 8      :3306 (loopback)                │──▶ /data/app_data      database + secrets
+  │ media-server :3456 (Bun+FFmpeg → HLS)        │──▶ /data/app_temp_data transcode scratch
   └─────────────────────────────────────────────┘
 ```
 
@@ -30,6 +31,8 @@ OpenHost router (TLS + owner auth)
   bucket on boot.
 - **Caddy** — fronts both on the single routed port and fixes the presigned-URL host
   so share links play for logged-out viewers.
+- **media-server** — Cap's official Bun + FFmpeg service; transcodes recordings to HLS so
+  shared videos start fast, and generates thumbnails.
 
 ## Deploy
 
@@ -109,19 +112,26 @@ passes. The `/cap/`, `/s/`, `/embed/` and playback API prefixes are listed in
 Secrets (`NEXTAUTH_SECRET`, `DATABASE_ENCRYPTION_KEY`, DB + MinIO credentials) are
 generated once on first boot and persisted to `app_data`.
 
-## Not included in v1
+## Known limitations / not yet working
 
-- **Server-side transcoding / HLS / Loom import** (Cap's `media-server`). Browser
-  recordings convert to MP4 client-side and play via presigned S3, so record → share →
-  view works without it. The trade-off is a short client-side conversion delay after you
-  stop recording (the "bit of latency"). Add the Bun/FFmpeg sidecar later for HLS + faster
-  finalization.
+- **Loom import** is present (the bundled media-server downloads + transcodes the video),
+  but doesn't finalize cleanly on self-host — Cap's import path carries Vercel-cloud
+  assumptions (a `@vercel/firewall` rate-limiter that fails closed, and more) that need a
+  small cap-web source patch to fully fix.
+- **Transcription / AI summaries** (Deepgram + Groq/OpenAI, or your own local Whisper) —
+  the pipeline is wired but off; enabling it needs API keys, or the same cap-web source
+  patch to point transcription at a self-hosted Whisper.
 - **Owner SSO bridge.** A future improvement can auto-provision the Cap account from
   `OPENHOST_OWNER_USERNAME` and skip the one-time magic-code login.
 
 ## License
 
 Cap is licensed under **AGPL-3.0**. This packaging (Dockerfile, entrypoint, Caddyfile,
-manifest) is provided under **AGPL-3.0-or-later** to match. Running this over a network
-carries AGPL's obligation to offer corresponding source — see the upstream repo and this
-one.
+manifest) is provided under **AGPL-3.0-or-later** to match — full text in [`LICENSE`](LICENSE).
+Running this over a network carries AGPL's obligation to offer corresponding source: this
+repo is linked from the app's `description`, and Cap itself is upstream at
+[CapSoftware/cap](https://github.com/CapSoftware/cap).
+
+> **TODO — only if we ever modify Cap itself** (e.g. patching the login flow, Loom import,
+> or transcription): once we ship a *modified* Cap, surface the corresponding-source link in
+> the app's own footer/UI to satisfy AGPL §13, not just here in the repo.

@@ -35,13 +35,6 @@ set -a; . "$SECRETS"; set +a
 CAP_PUBLIC_HOST="${OPENHOST_APP_NAME}.${OPENHOST_ZONE_DOMAIN}"
 export CAP_PUBLIC_HOST
 
-# --- Caddy front proxy on :8080 FIRST, so /_healthz answers 200 immediately while
-#     the backends (especially MySQL's first-run init) come up. ---
-log "starting Caddy front proxy"
-# Logs left on stderr on purpose — a proxy that fails to start should be loud.
-caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
-CADDY_PID=$!
-
 # --- MySQL 8 on 127.0.0.1:3306, data on app_data ---
 DATADIR="$APP_DATA/mysql8"
 mkdir -p "$DATADIR" /var/lib/mysql-files
@@ -138,6 +131,8 @@ export S3_PUBLIC_ENDPOINT="https://${CAP_PUBLIC_HOST}"
 export S3_INTERNAL_ENDPOINT="http://127.0.0.1:9000"
 export S3_PATH_STYLE="true"
 export NODE_ENV="production"
+export HOSTNAME="0.0.0.0"
+export PORT="3000"
 export NEXT_SHARP_PATH="/app/node_modules/sharp"
 # Cap's durable-workflow engine (Vercel Workflow SDK) dispatches steps by self-calling
 # this base URL. Pin it to the in-container Next port, else it resolves to the
@@ -148,8 +143,15 @@ export WORKFLOW_LOCAL_BASE_URL="http://127.0.0.1:3000"
 # --- Cap web. Runs migrations + S3 bucket setup itself on boot. ---
 log "starting Cap web — it will run DB migrations and create the S3 bucket"
 cd /app
-env HOSTNAME=0.0.0.0 PORT=3000 node apps/web/server.js &
+node apps/web/server.js &
 APP_PID=$!
+
+# --- Caddy front proxy on :8080, started LAST so the router's health check only goes
+#     green once every backend (MySQL, MinIO, media-server) and Cap have started.
+#     Logs left on stderr on purpose — a proxy that fails to start should be loud.
+log "starting Caddy front proxy"
+caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
+CADDY_PID=$!
 
 # Graceful shutdown: on SIGTERM (container stop / reload) stop Cap, then cleanly
 # shut MySQL down so InnoDB flushes before the runtime SIGKILLs us, then the rest.
