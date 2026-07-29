@@ -139,6 +139,11 @@ export S3_INTERNAL_ENDPOINT="http://127.0.0.1:9000"
 export S3_PATH_STYLE="true"
 export NODE_ENV="production"
 export NEXT_SHARP_PATH="/app/node_modules/sharp"
+# Cap's durable-workflow engine (Vercel Workflow SDK) dispatches steps by self-calling
+# this base URL. Pin it to the in-container Next port, else it resolves to the
+# host-mapped port (unreachable inside the container) and Loom import / transcription
+# / AI workflows fail with ECONNREFUSED.
+export WORKFLOW_LOCAL_BASE_URL="http://127.0.0.1:3000"
 
 # --- Cap web. Runs migrations + S3 bucket setup itself on boot. ---
 log "starting Cap web — it will run DB migrations and create the S3 bucket"
