@@ -24,6 +24,7 @@ public_paths = [
     "/api/thumbnail",# thumbnails
     "/_next/",       # Next.js runtime chunks + optimized images
     "/favicon.ico",
+    "/.well-known/vercel/",  # @vercel/firewall rate-limit probe (nonexistent route → 404 → fails open)
 ]
 
 [resources]
