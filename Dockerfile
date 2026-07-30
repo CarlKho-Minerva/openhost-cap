@@ -11,10 +11,15 @@
 # rebuilding the monorepo from source.
 
 # --- Cap's official prebuilt web app (Next.js standalone; pure JS, portable) ---
-FROM ghcr.io/capsoftware/cap-web:latest AS capweb
+# Pinned by digest instead of `:latest`: this digest was `:latest` as of
+# 2026-07-16 and is the running v0.3.1. Pinning keeps rebuilds reproducible so a
+# redeploy can't silently bump Cap or run new DB migrations on production data.
+# To upgrade Cap: bump this digest deliberately (and test migrations).
+FROM ghcr.io/capsoftware/cap-web@sha256:a15efd82c37442d01fa95c4d94954baa1a84b20b8289b758d293fc51b1eb5d54 AS capweb
 
 # --- Cap's official media-server (Bun + FFmpeg): transcoding, HLS, thumbnails, Loom import ---
-FROM ghcr.io/capsoftware/cap-media-server:latest AS mediaserver
+# Pinned to the digest that was `:latest` as of 2026-07-17 (see cap-web note above).
+FROM ghcr.io/capsoftware/cap-media-server@sha256:43587203aa3be503ab290fe8e6fbb32da7916dba56326044b44f99adbc8cdf10 AS mediaserver
 
 # --- glibc runtime: MySQL 8 + Node 24 + MinIO + Caddy ---
 FROM ubuntu:24.04

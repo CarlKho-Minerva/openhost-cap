@@ -23,11 +23,23 @@
 		}
 	}
 
+	# @vercel/firewall gates rate-limited actions (Loom import, etc.) by probing
+	# https://<Host>/.well-known/vercel/... and reading the status: a 404 means
+	# "not on Vercel" → fail open (allow). But Cap's own Next.js middleware treats
+	# that path as protected and 307-redirects it to /login, which the firewall reads
+	# as an unexpected status and ABORTS the action ("An unexpected error occurred").
+	# Pinning Host (below) is not enough — the 307 comes from Next.js, downstream of
+	# the router's /.well-known/vercel/ public_path. So answer the probe here, before
+	# it ever reaches Next.js, with a hard 404 → the firewall reliably fails open.
+	@vercelfw path /.well-known/vercel/*
+	handle @vercelfw {
+		respond 404
+	}
+
 	# Everything else -> Cap (Next.js). Pin proto + Host to the public HTTPS origin.
-	# Host is set (not just X-Forwarded-Host) because @vercel/firewall's rate-limit
-	# check builds https://<Host>/.well-known/vercel/... — with the raw host-mapped
-	# port it dies (ECONNREFUSED) and breaks Loom import; with the real public host it
-	# reaches a 404 (via /.well-known/vercel/ public_path) and fails open.
+	# Host is set (not just X-Forwarded-Host) because @vercel/firewall builds
+	# https://<Host>/.well-known/vercel/... — with the raw host-mapped port it dies
+	# (ECONNREFUSED); with the real public host it reaches the 404 handler above.
 	handle {
 		reverse_proxy 127.0.0.1:3000 {
 			header_up Host {$CAP_PUBLIC_HOST}
