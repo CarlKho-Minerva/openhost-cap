@@ -146,6 +146,38 @@ cd /app
 node apps/web/server.js &
 APP_PID=$!
 
+# --- OpenHost SSO: seed the compute-space owner as a Cap account (first boot) ---
+# OpenHost authenticates the owner at the router (X-OpenHost-Is-Owner=true) and
+# passes their handle as OPENHOST_OWNER_USERNAME. On a fresh instance, seed a Cap
+# user from it so the owner's Cap identity IS their OpenHost identity, not a random
+# email-code signup — the stable account a follow-up can trust the owner header to
+# log into with no code. Backgrounded + best-effort: waits for Cap's boot migrations
+# to create `users`, seeds ONLY when that table is empty (existing instances are
+# untouched), and every failure just logs — it must never wedge boot.
+seed_openhost_owner() {
+  owner="${OPENHOST_OWNER_USERNAME:-owner}"
+  email="${owner}@${CAP_PUBLIC_HOST}"
+  m() { mysql --protocol=tcp -h127.0.0.1 -ucap -p"${MYSQL_PASSWORD}" cap "$@"; }
+  i=0
+  while [ "$i" -lt 150 ]; do
+    m -N -e "SELECT 1 FROM information_schema.tables \
+      WHERE table_schema='cap' AND table_name='users'" 2>/dev/null | grep -q 1 && break
+    i=$((i + 1)); sleep 2
+  done
+  if m 2>/dev/null <<SQL
+INSERT INTO users (id, name, email, emailVerified)
+SELECT 'ohowner0000001', '${owner}', '${email}', NOW()
+  FROM DUAL
+ WHERE NOT EXISTS (SELECT 1 FROM users);
+SQL
+  then
+    log "OpenHost owner seed ran for '${owner}' (${email}) — no-op if users already exist"
+  else
+    log "OpenHost owner seed skipped (users table never became ready)"
+  fi
+}
+seed_openhost_owner &
+
 # --- Caddy front proxy on :8080, started LAST so the router's health check only goes
 #     green once every backend (MySQL, MinIO, media-server) and Cap have started.
 #     Logs left on stderr on purpose — a proxy that fails to start should be loud.
