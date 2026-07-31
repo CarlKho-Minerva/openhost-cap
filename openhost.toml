@@ -25,14 +25,18 @@ public_paths = [
     "/_next/",       # Next.js runtime chunks + optimized images
     "/favicon.ico",
     "/.well-known/vercel/",  # @vercel/firewall rate-limit probe (nonexistent route → 404 → fails open)
-    # Cap Desktop app + CLI talk to these over the internet; Cap authenticates them
-    # itself (verified: unauth'd requests get 401 "User not authenticated"), so the
-    # router's owner-login gate in front only breaks them. Let them through — Cap's
-    # own auth is the boundary, same as /api/video / /api/playlist above. Without
-    # this, desktop upload, Instant mode, and `cap caps` all get the login HTML.
+    # Cap Desktop app + CLI reach these over the internet, so the router's owner
+    # login gate in front only breaks them. Cap authenticates every route here
+    # itself — audited unauthenticated, direct to Cap: every real action under these
+    # prefixes returns 401 (or 404/405 for absent routes/methods), never data. Cap's
+    # own auth is the boundary, same as /api/video and /api/playlist above. Without
+    # this, desktop upload and Instant mode get the OpenHost login HTML.
+    # Least-privilege: only the two prefixes the desktop flow needs are public. The
+    # only other routes reachable from the desktop domain (/api/videos/*/retry-ai,
+    # retry-transcription) stay gated — they're owner-dashboard actions that pass
+    # the router via the owner session, so they never needed a public path.
     "/api/desktop/", # desktop/CLI API: session, video/create, segment finalize
     "/api/upload/",  # signed upload URLs + multipart
-    "/api/videos",   # video list/detail for the CLI (cap caps)
 ]
 
 [resources]
