@@ -5,8 +5,13 @@
 Record your screen in the browser, get a shareable link, and keep every byte on
 your own compute. No signup, no third-party database, no external S3, no upsell. Finally!!
 
-<!-- HERO IMAGE — swap in the demo cap's share thumbnail once recorded, e.g.
-     ![Cap on OpenHost](https://cap.carl.selfhost.imbue.com/api/thumbnail?videoId=XXXX) -->
+<a href="https://www.loom.com/share/7410eab7eb1b45d4a5f0daca95d444ac">
+  <img alt="Watch the demo — deploy Cap on OpenHost, sign in with no code, record + share"
+       src="https://cdn.loom.com/sessions/thumbnails/7410eab7eb1b45d4a5f0daca95d444ac-with-play.gif"
+       width="640" />
+</a>
+
+**[▶ Watch the 3-min demo](https://www.loom.com/share/7410eab7eb1b45d4a5f0daca95d444ac)** — one-click deploy → instant sign-in → record + share, all on your own compute. (Bowei tested it — works great.)
 
 **Owner sign-in is instant.** OpenHost already knows who you are, so this build signs the
 compute-space owner straight into Cap — no email code, no signup. First boot also skips
@@ -46,6 +51,11 @@ OpenHost router (TLS + owner auth)
   shared videos start fast, and generates thumbnails.
 
 ## Deploy
+
+**One click** — from the OpenHost catalog:
+**[catalog.carl.selfhost.imbue.com/apps/official/cap](https://catalog.carl.selfhost.imbue.com/apps/official/cap)**
+
+Or with the CLI:
 
 ```bash
 # One-time: install + log in the OpenHost CLI
