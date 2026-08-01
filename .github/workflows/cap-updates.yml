@@ -1,0 +1,90 @@
+name: Cap update check
+
+# Weekly heartbeat so Carl never hand-chases Cap releases. openhost-cap is NOT a
+# fork, so scheduled runs are reliable here (GitHub throttles cron on forks).
+#   1. If our Cap fork is behind upstream CapSoftware/cap -> open/refresh an issue
+#      with the exact steps to pull it in.
+#   2. If a newer cap-web:selfhost image is published -> open a PR bumping the
+#      pinned digest in the Dockerfile (merge it, then `oh app reload cap --update`).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 15 * * 1" # Mondays 15:00 UTC
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is our fork behind upstream Cap?
+        id: up
+        run: |
+          set -euo pipefail
+          git clone --quiet --filter=blob:none https://github.com/CarlKho-Minerva/cap.git fork
+          cd fork
+          git checkout --quiet carl/openhost-selfhost
+          git remote add upstream https://github.com/CapSoftware/cap.git
+          git fetch --quiet --no-tags upstream main
+          echo "behind=$(git rev-list --count carl/openhost-selfhost..upstream/main)" >> "$GITHUB_OUTPUT"
+
+      - name: Open or refresh the upstream issue
+        if: steps.up.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TITLE="Cap upstream has new commits"
+          printf '%s\n' \
+            "Upstream **CapSoftware/cap** is **${{ steps.up.outputs.behind }} commit(s)** ahead of our self-host branch \`carl/openhost-selfhost\`." \
+            "" \
+            "Pull it in:" \
+            "1. In the fork (CarlKho-Minerva/cap) run the **Sync upstream Cap** workflow, then merge the PR it opens." \
+            "2. Run **Docker Build Web** with input \`tag\` = \`selfhost\`." \
+            "3. A digest-bump PR will appear in this repo — merge it, then run \`oh app reload cap --update\`." \
+            "" \
+            "Upstream commits: https://github.com/CapSoftware/cap/commits/main" \
+            "" \
+            "_automated weekly check_" > issue.md
+          NUM=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$NUM" ]; then gh issue comment "$NUM" --body-file issue.md; else gh issue create --title "$TITLE" --body-file issue.md; fi
+
+      - name: Is a newer cap-web:selfhost image published?
+        id: img
+        run: |
+          set -euo pipefail
+          NEW=$(docker buildx imagetools inspect ghcr.io/carlkho-minerva/cap-web:selfhost 2>/dev/null | awk '/^Digest:/{print $2; exit}')
+          PINNED=$(grep -oE 'cap-web@sha256:[a-f0-9]+' Dockerfile | head -1 | cut -d@ -f2)
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
+
+      - name: Open a digest-bump PR
+        if: steps.img.outputs.new != '' && steps.img.outputs.new != steps.img.outputs.pinned
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NEW="${{ steps.img.outputs.new }}"; OLD="${{ steps.img.outputs.pinned }}"
+          git config user.name "cap-digest-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -B auto/bump-cap-web
+          sed -i "s#cap-web@${OLD}#cap-web@${NEW}#" Dockerfile
+          git commit -am "chore: bump cap-web image to ${NEW}"
+          git push -f origin auto/bump-cap-web
+          printf '%s\n' \
+            "A newer \`ghcr.io/carlkho-minerva/cap-web:selfhost\` build is published." \
+            "" \
+            "- old: \`${OLD}\`" \
+            "- new: \`${NEW}\`" \
+            "" \
+            "Merge, then redeploy: \`oh app reload cap --update\`." \
+            "" \
+            "_automated weekly check_" > pr.md
+          if ! gh pr view auto/bump-cap-web --json number >/dev/null 2>&1; then
+            gh pr create --base main --head auto/bump-cap-web --title "chore: bump cap-web image to latest fork build" --body-file pr.md
+          fi
