@@ -3,7 +3,14 @@
 [Cap](https://github.com/CapSoftware/cap) — the open-source Loom — packaged as a
 **single self-contained [OpenHost](https://github.com/imbue-openhost) app**.
 Record your screen in the browser, get a shareable link, and keep every byte on
-your own compute. No desktop app, no third-party database, no external S3. Finally!!
+your own compute. No signup, no third-party database, no external S3, no upsell. Finally!!
+
+<!-- HERO IMAGE — swap in the demo cap's share thumbnail once recorded, e.g.
+     ![Cap on OpenHost](https://cap.carl.selfhost.imbue.com/api/thumbnail?videoId=XXXX) -->
+
+**Owner sign-in is instant.** OpenHost already knows who you are, so this build signs the
+compute-space owner straight into Cap — no email code, no signup. First boot also skips
+onboarding and hides the "Cap Pro" upsell (self-host has no plans).
 
 ## What's in the box
 
@@ -22,8 +29,12 @@ OpenHost router (TLS + owner auth)
   └─────────────────────────────────────────────┘
 ```
 
-- **Cap web** — the official `ghcr.io/capsoftware/cap-web` app artifacts, run on a
-  glibc base. Records in-browser via `getDisplayMedia`/`MediaRecorder`, converts to
+- **Cap web** — our fork's build
+  ([`carlkho-minerva/cap-web`](https://github.com/CarlKho-Minerva/cap/tree/carl/openhost-selfhost),
+  built native amd64+arm64 by the fork's GitHub Action), run on a glibc base. Identical to
+  upstream [Cap](https://github.com/CapSoftware/cap) except for two self-host changes:
+  trusted-proxy SSO auto-login (owner signs in with no email code) and the "Cap Pro" upsell
+  hidden off Cap Cloud. Records in-browser via `getDisplayMedia`/`MediaRecorder`, converts to
   MP4 client-side, uploads to S3.
 - **MySQL 8** — the database Cap officially targets (its migrations use JSON-function
   generated columns that MariaDB rejects). Cap runs its own migrations on boot.
