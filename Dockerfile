@@ -10,12 +10,14 @@
 # mysql-server, and reuse Cap's prebuilt (pure-JS) web app artifacts rather than
 # rebuilding the monorepo from source.
 
-# --- Cap's official prebuilt web app (Next.js standalone; pure JS, portable) ---
-# Pinned by digest instead of `:latest`: this digest was `:latest` as of
-# 2026-07-16 and is the running v0.3.1. Pinning keeps rebuilds reproducible so a
-# redeploy can't silently bump Cap or run new DB migrations on production data.
-# To upgrade Cap: bump this digest deliberately (and test migrations).
-FROM ghcr.io/capsoftware/cap-web@sha256:a15efd82c37442d01fa95c4d94954baa1a84b20b8289b758d293fc51b1eb5d54 AS capweb
+# --- Cap web app: OUR fork's build (CarlKho-Minerva/cap @ carl/openhost-selfhost) ---
+# Built natively (amd64+arm64) by the fork's "Docker Build Web" GitHub Action from
+# apps/web/Dockerfile and pushed to ghcr. Differs from upstream CapSoftware/cap only
+# by the OpenHost self-host changes: trusted-proxy SSO auto-login (no email code) and
+# the "Cap Pro" upsell hidden off Cap Cloud (NEXT_PUBLIC_IS_CAP unset at build).
+# Pinned by the multi-arch index digest so a redeploy can't silently change Cap or
+# re-run migrations. To update: re-run the Action, then bump this digest deliberately.
+FROM ghcr.io/carlkho-minerva/cap-web@sha256:a6808d48125cd1d6b342d6a4edb59fdfdc271a29f95feaf38cd5767e9d2ce1ca AS capweb
 
 # --- Cap's official media-server (Bun + FFmpeg): transcoding, HLS, thumbnails, Loom import ---
 # Pinned to the digest that was `:latest` as of 2026-07-17 (see cap-web note above).
