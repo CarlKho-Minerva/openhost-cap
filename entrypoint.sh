@@ -140,12 +140,18 @@ export NEXT_SHARP_PATH="/app/node_modules/sharp"
 # / AI workflows fail with ECONNREFUSED.
 export WORKFLOW_LOCAL_BASE_URL="http://127.0.0.1:3000"
 
-# Self-host polish: declare this a self-hosted (non-cloud) build so Cap hides the
-# "Cap Pro" upsell + cloud onboarding. Takes effect only if Cap reads these at
-# runtime; if they were baked into the prebuilt image it's a harmless no-op (then
-# the removal must happen in a source build).
-export NEXT_PUBLIC_IS_CAP_CLOUD="false"
-export NEXT_PUBLIC_DOCKER_BUILD="true"
+# --- OpenHost SSO (trusted-proxy header auth) ---
+# The OpenHost router authenticates the compute-space owner and injects
+# X-OpenHost-Is-Owner: true on every request (stripping any client-sent copy — the
+# router is the sole authority). Our Cap fork's "trusted-proxy" NextAuth provider
+# trusts that header and signs the owner into their seeded Cap account with no email
+# code; the login page auto-triggers it, so the owner never sees the code screen.
+# Node lowercases header names. The email is the SAME identity the owner seed
+# creates below, so a fresh instance (any owner) works with no per-box config.
+# (The "Cap Pro" upsell + onboarding are removed in the image itself now — this
+# build has NEXT_PUBLIC_IS_CAP unset, and the seed marks users onboarded.)
+export TRUSTED_PROXY_AUTH_HEADER="x-openhost-is-owner"
+export TRUSTED_PROXY_AUTH_EMAIL="${OPENHOST_OWNER_USERNAME:-owner}@${CAP_PUBLIC_HOST}"
 
 # --- Cap web. Runs migrations + S3 bucket setup itself on boot. ---
 log "starting Cap web — it will run DB migrations and create the S3 bucket"
