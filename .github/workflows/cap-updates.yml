@@ -57,9 +57,19 @@ jobs:
       - name: Is a newer cap-web:selfhost image published?
         id: img
         run: |
-          set -euo pipefail
-          NEW=$(docker buildx imagetools inspect ghcr.io/carlkho-minerva/cap-web:selfhost 2>/dev/null | awk '/^Digest:/{print $2; exit}')
+          set -uo pipefail
+          # Resolve the multi-arch index digest via the ghcr registry API (anonymous
+          # token for the public image). No docker/buildx dependency; if it hiccups,
+          # NEW stays empty and the bump step below is simply skipped.
+          TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:carlkho-minerva/cap-web:pull&service=ghcr.io" | jq -r '.token')
+          NEW=$(curl -fsSL -o /dev/null -D - \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json" \
+            -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://ghcr.io/v2/carlkho-minerva/cap-web/manifests/selfhost" \
+            | awk 'tolower($1)=="docker-content-digest:"{print $2}' | tr -d '\r')
           PINNED=$(grep -oE 'cap-web@sha256:[a-f0-9]+' Dockerfile | head -1 | cut -d@ -f2)
+          echo "resolved new=[$NEW] pinned=[$PINNED]"
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
           echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
 
