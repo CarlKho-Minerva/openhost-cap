@@ -23,6 +23,10 @@ FROM ghcr.io/carlkho-minerva/cap-web@sha256:a6808d48125cd1d6b342d6a4edb59fdfdc27
 # Pinned to the digest that was `:latest` as of 2026-07-17 (see cap-web note above).
 FROM ghcr.io/capsoftware/cap-media-server@sha256:43587203aa3be503ab290fe8e6fbb32da7916dba56326044b44f99adbc8cdf10 AS mediaserver
 
+# --- MinIO, same release as before. dl.min.io started returning 410 Gone for archived
+# binaries (2026-09-15), which broke every rebuild; quay.io still serves the image.
+FROM quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e AS minio
+
 # --- glibc runtime: MySQL 8 + Node 24 + MinIO + Caddy ---
 FROM ubuntu:24.04
 
@@ -44,11 +48,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && rm -rf /var/lib/apt/lists/* \
     && node --version
 
-# MinIO server + Caddy, matched to the host architecture.
+# MinIO server (RELEASE.2025-09-07T16-13-09Z) + Caddy, matched to the host architecture.
+COPY --from=minio /usr/bin/minio /usr/local/bin/minio
 RUN set -eux; \
     case "$(uname -m)" in x86_64) A=amd64 ;; aarch64) A=arm64 ;; *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;; esac; \
-    curl -fsSL "https://dl.min.io/server/minio/release/linux-${A}/archive/minio.RELEASE.2025-09-07T16-13-09Z" -o /usr/local/bin/minio; \
-    chmod +x /usr/local/bin/minio; /usr/local/bin/minio --version; \
+    /usr/local/bin/minio --version; \
     curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_${A}.tar.gz" -o /tmp/caddy.tgz; \
     tar -xzf /tmp/caddy.tgz -C /usr/local/bin caddy; rm /tmp/caddy.tgz; caddy version
 
