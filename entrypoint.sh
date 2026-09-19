@@ -267,7 +267,9 @@ while :; do
   wait -n
   code=$?
   set -e
-  [ "$SHUTTING_DOWN" = 1 ] && exit 0
+  # `[ ... ] && exit 0` would be a failing top-level list under `set -e` whenever
+  # the test is false, which would kill the supervisor on the first child exit.
+  if [ "$SHUTTING_DOWN" = 1 ]; then exit 0; fi
 
   if ! dead=$(dead_child); then
     # An unsupervised background job finished (the owner seed). Keep waiting.
@@ -278,5 +280,7 @@ while :; do
   # Best effort: flush InnoDB before we go, unless mysqld is the one that died.
   [ "${dead%%:*}" = "mysqld" ] || mysqladmin --socket=/run/mysqld/mysqld.sock -uroot shutdown 2>/dev/null || true
   kill "$HEALTH_PID" "$APP_PID" "$MINIO_PID" "$MS_PID" "$CADDY_PID" 2>/dev/null || true
-  exit "$([ "$code" -eq 0 ] && echo 1 || echo "$code")"
+  # Never exit 0 here: a dead child is a failure even if it exited cleanly.
+  if [ "$code" -eq 0 ]; then code=1; fi
+  exit "$code"
 done
