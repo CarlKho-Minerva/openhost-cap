@@ -17,7 +17,7 @@
 # the "Cap Pro" upsell hidden off Cap Cloud (NEXT_PUBLIC_IS_CAP unset at build).
 # Pinned by the multi-arch index digest so a redeploy can't silently change Cap or
 # re-run migrations. To update: re-run the Action, then bump this digest deliberately.
-FROM ghcr.io/carlkho-minerva/cap-web@sha256:a6808d48125cd1d6b342d6a4edb59fdfdc271a29f95feaf38cd5767e9d2ce1ca AS capweb
+FROM ghcr.io/carlkho-minerva/cap-web@sha256:893bf6a745ff2604902e5ef4277db3a42bdb93279f1e583ba8647e0bc3a8b03d AS capweb
 
 # --- Cap's official media-server (Bun + FFmpeg): transcoding, HLS, thumbnails, Loom import ---
 # Pinned to the digest that was `:latest` as of 2026-07-17 (see cap-web note above).
