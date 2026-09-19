@@ -4,5 +4,9 @@
 .env.*
 node_modules/
 
-# Personal video scripts + blog drafts — kept local, not part of the public packaging repo
-/docs/
+# Personal video scripts + blog drafts — kept local, not part of the public packaging repo.
+# Listed as /docs/* rather than /docs/ so a single file can be un-ignored below;
+# git will not look inside an excluded directory at all.
+/docs/*
+# ...except the operational runbook, which has to ship with the packaging.
+!/docs/RELIABILITY.md
