@@ -1,8 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 # Supervises the bundled services (MySQL 8, MinIO, media-server, Caddy) and then
 # runs Cap's Next.js server. Cap runs its own DB migrations and creates +
 # policies the S3 bucket on boot, so this script just stands up the backends,
 # wires the environment, and waits for them to be ready.
+#
+# bash, not sh: Ubuntu's /bin/sh is dash, which has no `wait -n`. Supervising
+# every child instead of only Cap needs it. See the supervisor at the bottom.
 set -eu
 
 log() { echo "[openhost-cap] $*"; }
@@ -11,6 +14,20 @@ APP_DATA="${OPENHOST_APP_DATA_DIR:-/data/app_data/cap}"
 ARCHIVE="${OPENHOST_APP_ARCHIVE_DIR:-/data/app_archive/cap}"
 APP_TEMP="${OPENHOST_APP_TEMP_DIR:-/data/app_temp_data/cap}"
 mkdir -p "$APP_DATA" "$ARCHIVE/minio" "$APP_TEMP" /run/mysqld
+
+# Caddy's share-link access log. On app_data so it survives a reload and is
+# backed up; Caddy itself rolls it at 10 MB and keeps 5.
+CAP_ACCESS_LOG="$APP_DATA/access/shares.log"
+export CAP_ACCESS_LOG
+mkdir -p "$(dirname "$CAP_ACCESS_LOG")"
+
+# Deep-health state, written only by healthcheck.sh and read only by Caddy.
+# On tmpfs on purpose: a stale "ok" flag must never survive a restart.
+CAP_HEALTH_DIR="/run/cap-health"
+export CAP_HEALTH_DIR
+mkdir -p "$CAP_HEALTH_DIR"
+rm -f "$CAP_HEALTH_DIR/ok"
+echo "starting" > "$CAP_HEALTH_DIR/status"
 
 # --- One-time, persisted secrets (stable across restarts; live on backed-up app_data) ---
 SECRETS="$APP_DATA/secrets.env"
@@ -134,6 +151,10 @@ export NODE_ENV="production"
 export HOSTNAME="0.0.0.0"
 export PORT="3000"
 export NEXT_SHARP_PATH="/app/node_modules/sharp"
+# Let visitors comment on a share link without an account. The flag is read by
+# the fork (added in parallel on carl/openhost-selfhost); on an image that does
+# not know it yet it is simply ignored.
+export CAP_ALLOW_GUEST_COMMENTS=true
 # Cap's durable-workflow engine (Vercel Workflow SDK) dispatches steps by self-calling
 # this base URL. Pin it to the in-container Next port, else it resolves to the
 # host-mapped port (unreachable inside the container) and Loom import / transcription
@@ -201,20 +222,61 @@ log "starting Caddy front proxy"
 caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
 CADDY_PID=$!
 
+# --- Deep health loop: the only writer of /run/cap-health, which Caddy serves as
+#     /_healthz. See healthcheck.sh for what it proves and why a liveness ping
+#     was not enough (the 2026-09-15 archive outage).
+log "starting deep health loop"
+/usr/local/bin/healthcheck.sh &
+HEALTH_PID=$!
+
 # Graceful shutdown: on SIGTERM (container stop / reload) stop Cap, then cleanly
 # shut MySQL down so InnoDB flushes before the runtime SIGKILLs us, then the rest.
 graceful_stop() {
-  log "signal received — shutting down"
+  log "signal received, shutting down"
+  SHUTTING_DOWN=1
+  kill "$HEALTH_PID" 2>/dev/null || true
   kill "$APP_PID" 2>/dev/null || true
   mysqladmin --socket=/run/mysqld/mysqld.sock -uroot shutdown 2>/dev/null || true
   kill "$MINIO_PID" "$MS_PID" "$CADDY_PID" 2>/dev/null || true
   exit 0
 }
+SHUTTING_DOWN=0
 trap graceful_stop TERM INT
 
-# Block on Cap; if it exits on its own (e.g. crash), propagate the code so the
-# container restarts instead of hanging.
-wait "$APP_PID"
-code=$?
-log "Cap web exited (code $code)"
-exit "$code"
+# --- Supervisor -------------------------------------------------------------
+# Previously this only waited on Cap. If mysqld, MinIO, the media-server or Caddy
+# died, the container kept running and kept serving a half-broken app: Caddy
+# still answered, /_healthz was a static 200, and OpenHost had no reason to think
+# anything was wrong. That is the same shape as the 2026-09-15 outage.
+#
+# Now any supervised child that exits takes the whole container down with a
+# non-zero code and a log line naming it. OpenHost runs app containers with
+# --restart=unless-stopped (compute_space/core/containers.py), so podman restarts
+# an exited container. A half-broken container is worse than a restarting one.
+SUPERVISED="mysqld:$MYSQL_PID minio:$MINIO_PID media-server:$MS_PID cap-web:$APP_PID caddy:$CADDY_PID healthcheck:$HEALTH_PID"
+
+dead_child() {
+  for spec in $SUPERVISED; do
+    kill -0 "${spec##*:}" 2>/dev/null || { printf '%s' "$spec"; return 0; }
+  done
+  return 1
+}
+
+while :; do
+  set +e
+  wait -n
+  code=$?
+  set -e
+  [ "$SHUTTING_DOWN" = 1 ] && exit 0
+
+  if ! dead=$(dead_child); then
+    # An unsupervised background job finished (the owner seed). Keep waiting.
+    continue
+  fi
+
+  log "FATAL: supervised child '${dead%%:*}' (pid ${dead##*:}) exited with code ${code} - taking the container down so OpenHost restarts it"
+  # Best effort: flush InnoDB before we go, unless mysqld is the one that died.
+  [ "${dead%%:*}" = "mysqld" ] || mysqladmin --socket=/run/mysqld/mysqld.sock -uroot shutdown 2>/dev/null || true
+  kill "$HEALTH_PID" "$APP_PID" "$MINIO_PID" "$MS_PID" "$CADDY_PID" 2>/dev/null || true
+  exit "$([ "$code" -eq 0 ] && echo 1 || echo "$code")"
+done

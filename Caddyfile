@@ -6,10 +6,58 @@
 }
 
 :8080 {
-	# Cheap health endpoint — answers 200 even before Cap has finished booting.
+	# Access log for the only requests that answer "did anyone open this link":
+	# share pages, embeds, and the player manifest. Everything else is skipped.
+	# Written as JSON to a size-rotated file on app_data (10 MB, 5 kept), so it
+	# survives a reload and rides along with the backup, unlike container stdout,
+	# which is truncated on every restart.
+	#
+	# Deliberately dropped: Cookie and Authorization (session tokens), and the
+	# signature-bearing query params, so the file is safe to read and to keep.
+	# Deliberately kept: User-Agent, Referer, and X-Openhost-Is-Owner, so Carl's
+	# own views are distinguishable from a real visitor's.
+	log shares {
+		output file {$CAP_ACCESS_LOG} {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete X-Amz-Signature
+					delete X-Amz-Credential
+					delete X-Amz-Security-Token
+				}
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+			}
+		}
+	}
+	@unlogged not path /s/* /embed/* /api/playlist*
+	log_skip @unlogged
+
+	# Health endpoint. No longer a static 200: healthcheck.sh maintains
+	# /run/cap-health/ok, and that flag only exists while a real archive write, a
+	# real MinIO PUT/GET/DELETE, a MySQL SELECT 1 and a Next response all succeed.
+	# The old static 200 stayed green through the whole 2026-09-15 upload outage.
+	# Serving a file keeps the endpoint free (no process spawned per request) and
+	# means it cannot wedge even if every backend is hung. Flag absent, during
+	# boot or on a failing deep check, gives 503 with the reason as the body.
 	@health path /_healthz
 	handle @health {
-		respond "ok" 200
+		root * /run/cap-health
+		@deep_ok file /ok
+		handle @deep_ok {
+			rewrite * /status
+			file_server
+		}
+		handle {
+			rewrite * /status
+			file_server {
+				status 503
+			}
+		}
 	}
 
 	# Public S3 object access for presigned share/playback + upload URLs.
