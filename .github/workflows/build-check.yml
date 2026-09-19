@@ -1,0 +1,38 @@
+name: Build check
+
+# `oh app reload` rebuilds this image on the zone, and a failed rebuild is only
+# discovered with Cap already down. Build it here first. Nothing is published.
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths: [Dockerfile, entrypoint.sh, healthcheck.sh, s3probe.js, Caddyfile]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: openhost-cap:check
+      - name: Binaries and config inside the image
+        run: |
+          docker run --rm -e CAP_ACCESS_LOG=/tmp/shares.log --entrypoint bash openhost-cap:check -c '
+            set -e
+            node --version
+            caddy version
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            bash -n /entrypoint.sh
+            bash -n /usr/local/bin/healthcheck.sh
+            node --check /usr/local/bin/s3probe.js
+            cd /app && node -e "require(\"sharp\")"
+            mysqld --version
+            minio --version
+          '
