@@ -27,6 +27,20 @@ FROM ghcr.io/capsoftware/cap-media-server@sha256:43587203aa3be503ab290fe8e6fbb32
 # binaries (2026-09-15), which broke every rebuild; quay.io still serves the image.
 FROM quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e AS minio
 
+# --- Caddy 2.8.4. Was a GitHub release tarball fetched at build time with no
+# checksum. Same lesson dl.min.io taught: a release asset is a URL, and a URL can
+# 404, move, or change. The official multi-arch image, pinned by index digest,
+# carries the identical binary for the build architecture with no loose fetch.
+FROM docker.io/library/caddy@sha256:226d1f059b75399fe19182893c7184591c07b97afc8dfcf44eeb80c9a77a530f AS caddy
+
+# --- Node 24. Was `curl https://deb.nodesource.com/setup_24.x | bash -`: an
+# unpinned shell script piped into root, then whatever 24.x NodeSource happened
+# to be serving that day. The most rebuild-fragile step in this file. The
+# official Node image, pinned by index digest, is the same upstream build and
+# cannot drift. Bookworm glibc 2.36 binaries run on Ubuntu 24.04 (glibc 2.39);
+# the direction that breaks is the other one.
+FROM docker.io/library/node@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553 AS node
+
 # --- glibc runtime: MySQL 8 + Node 24 + MinIO + Caddy ---
 FROM ubuntu:24.04
 
@@ -38,23 +52,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        mysql-server-core-8.0 mysql-client-core-8.0 mysql-common \
-       ffmpeg ca-certificates curl xz-utils tar \
+       ffmpeg ca-certificates curl xz-utils tar libstdc++6 \
     && id mysql >/dev/null 2>&1 || (groupadd -r mysql && useradd -r -g mysql -s /usr/sbin/nologin mysql) \
     && rm -rf /var/lib/apt/lists/*
 
-# Node 24 (glibc) via NodeSource — matches the version Cap's app was built with.
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/* \
-    && node --version
+# Node 24 + npm, copied from the pinned official image. /usr/local is effectively
+# empty on the Ubuntu base, so this is a clean graft, and it lands before the
+# single-binary copies below so nothing overwrites them.
+COPY --from=node /usr/local /usr/local
+RUN node --version && npm --version
 
-# MinIO server (RELEASE.2025-09-07T16-13-09Z) + Caddy, matched to the host architecture.
+# MinIO server (RELEASE.2025-09-07T16-13-09Z) + Caddy 2.8.4, both from pinned
+# multi-arch images, so each copy is already the right architecture and no
+# architecture case statement is needed.
 COPY --from=minio /usr/bin/minio /usr/local/bin/minio
-RUN set -eux; \
-    case "$(uname -m)" in x86_64) A=amd64 ;; aarch64) A=arm64 ;; *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;; esac; \
-    /usr/local/bin/minio --version; \
-    curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_${A}.tar.gz" -o /tmp/caddy.tgz; \
-    tar -xzf /tmp/caddy.tgz -C /usr/local/bin caddy; rm /tmp/caddy.tgz; caddy version
+COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy
+RUN minio --version && caddy version
 
 # Cap's web app (standalone) lives at /app (server at /app/apps/web/server.js).
 COPY --from=capweb /app /app
@@ -71,7 +84,11 @@ COPY --from=mediaserver /app /opt/media-server
 
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Deep health check: the loop that keeps /run/cap-health honest, plus the
+# dependency-free SigV4 S3 round trip it runs against the bundled MinIO.
+COPY healthcheck.sh /usr/local/bin/healthcheck.sh
+COPY s3probe.js /usr/local/bin/s3probe.js
+RUN chmod +x /entrypoint.sh /usr/local/bin/healthcheck.sh
 
 # The OpenHost router terminates TLS and forwards plain HTTP to this port.
 EXPOSE 8080

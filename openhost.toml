@@ -37,6 +37,20 @@ public_paths = [
     # the router via the owner session, so they never needed a public path.
     "/api/desktop/", # desktop/CLI API: session, video/create, segment finalize
     "/api/upload/",  # signed upload URLs + multipart
+    # View beacon. The share page POSTs here so an anonymous view is counted;
+    # behind the router's login gate it never fires and every share link looks
+    # unwatched. Audited on the fork (carl/openhost-selfhost):
+    #   /api/analytics/track  POST only, write-only. Returns {"success":true}
+    #     and nothing else, whoever calls it. It reads no caller-supplied
+    #     identity, and the only inputs it trusts are a videoId it looks up and
+    #     a session id it truncates.
+    # NOT the parent "/api/analytics/" prefix: the bare /api/analytics route is a
+    # GET that returns a video's view COUNT. It is policy-gated (canView), so it
+    # discloses nothing about a private video, but for a public one it hands the
+    # number to any anonymous caller. That is data, so it stays behind the gate;
+    # the owner dashboard reaches it through the owner session anyway. Only the
+    # exact write-only leaf is public.
+    "/api/analytics/track",
 ]
 
 [resources]
