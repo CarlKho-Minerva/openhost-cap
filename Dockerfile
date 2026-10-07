@@ -10,18 +10,18 @@
 # mysql-server, and reuse Cap's prebuilt (pure-JS) web app artifacts rather than
 # rebuilding the monorepo from source.
 
-# --- Cap web app: OUR fork's build (CarlKho-Minerva/cap @ carl/openhost-selfhost) ---
+# --- Cap web app: OUR fork's build (CarlKho-Minerva/cap @ carl/selfhost-2026-10) ---
 # Built natively (amd64+arm64) by the fork's "Docker Build Web" GitHub Action from
 # apps/web/Dockerfile and pushed to ghcr. Differs from upstream CapSoftware/cap only
 # by the OpenHost self-host changes: trusted-proxy SSO auto-login (no email code) and
 # the "Cap Pro" upsell hidden off Cap Cloud (NEXT_PUBLIC_IS_CAP unset at build).
 # Pinned by the multi-arch index digest so a redeploy can't silently change Cap or
 # re-run migrations. To update: re-run the Action, then bump this digest deliberately.
-FROM ghcr.io/carlkho-minerva/cap-web@sha256:893bf6a745ff2604902e5ef4277db3a42bdb93279f1e583ba8647e0bc3a8b03d AS capweb
+FROM ghcr.io/carlkho-minerva/cap-web@sha256:106c9175ae41fa469cd822fc5a5c393ad020f16c7f1b4f6ed232cdb3f553bbb8 AS capweb
 
 # --- Cap's official media-server (Bun + FFmpeg): transcoding, HLS, thumbnails, Loom import ---
-# Pinned to the digest that was `:latest` as of 2026-07-17 (see cap-web note above).
-FROM ghcr.io/capsoftware/cap-media-server@sha256:43587203aa3be503ab290fe8e6fbb32da7916dba56326044b44f99adbc8cdf10 AS mediaserver
+# Pinned to the digest that was `:latest` as of 2026-10-06 (built 2026-09-24; see cap-web note above).
+FROM ghcr.io/capsoftware/cap-media-server@sha256:261ad94d600b9c71d6772b253e3ba056ed90dc81939c22e3b82cf227d7c7492f AS mediaserver
 
 # --- MinIO, same release as before. dl.min.io started returning 410 Gone for archived
 # binaries (2026-09-15), which broke every rebuild; quay.io still serves the image.
