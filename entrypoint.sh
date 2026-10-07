@@ -153,7 +153,7 @@ export S3_PATH_STYLE="true"
 export NODE_ENV="production"
 export HOSTNAME="0.0.0.0"
 export PORT="3000"
-export NEXT_SHARP_PATH="/app/node_modules/sharp"
+export NEXT_SHARP_PATH="/opt/sharp/node_modules/sharp"
 # Let visitors comment on a share link without an account. The flag is read by
 # the fork (added in parallel on carl/openhost-selfhost); on an image that does
 # not know it yet it is simply ignored.
