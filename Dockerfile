@@ -25,7 +25,9 @@ FROM ghcr.io/capsoftware/cap-media-server@sha256:261ad94d600b9c71d6772b253e3ba05
 
 # --- MinIO, same release as before. dl.min.io started returning 410 Gone for archived
 # binaries (2026-09-15), which broke every rebuild; quay.io still serves the image.
-FROM quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e AS minio
+# 2026-10-06: quay.io and Docker Hub now answer 401 for MinIO, so the same release
+# is built from GitHub source by .github/workflows/build-minio.yml (minio/Dockerfile).
+FROM ghcr.io/carlkho-minerva/minio@sha256:efb107d60976e92a1d7d747da3b816208d2d26ece74276aa9c7a2f0c0a6c0f24 AS minio
 
 # --- Caddy 2.8.4. Was a GitHub release tarball fetched at build time with no
 # checksum. Same lesson dl.min.io taught: a release asset is a URL, and a URL can
