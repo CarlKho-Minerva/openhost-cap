@@ -116,8 +116,11 @@ done
 log "starting media-server"
 # exec in the subshell so MS_PID is bun itself (killable on shutdown). Temp/scratch
 # for in-flight transcodes goes to app_temp_data, not the ephemeral container FS.
+# MEDIA_SERVER_WEB_ORIGIN: the media-server only fetches /api/storage/object from
+# cap.so unless told this instance's origin too (media-server since 2026-09).
 ( cd /opt/media-server && exec env PORT=3456 TMPDIR="$APP_TEMP" \
   MEDIA_SERVER_WEBHOOK_SECRET="$MEDIA_SERVER_WEBHOOK_SECRET" \
+  MEDIA_SERVER_WEB_ORIGIN="https://${CAP_PUBLIC_HOST}" \
   bun run src/index.ts ) &
 MS_PID=$!
 
