@@ -27,7 +27,7 @@ jobs:
           docker run --rm -e CAP_ACCESS_LOG=/tmp/shares.log --entrypoint bash openhost-cap:check -c '
             set -e
             node --version
-            (cd /app/apps/web && node -e "require.resolve('next'); require(process.env.NEXT_SHARP_PATH || '/opt/sharp/node_modules/sharp')")
+            (cd /app/apps/web && node -e "require.resolve(process.argv[1]); require(process.argv[2])" next /opt/sharp/node_modules/sharp)
             caddy version
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
             bash -n /entrypoint.sh
