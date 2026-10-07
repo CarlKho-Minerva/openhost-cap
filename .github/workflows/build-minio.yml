@@ -1,10 +1,12 @@
 name: Build MinIO
 
 # Publishes ghcr.io/<owner>/minio:<release> from source (see minio/Dockerfile).
-# Run by hand when the pinned release changes, then pin the printed digest in
-# the main Dockerfile.
+# Runs when the MinIO build changes (or by hand); pin the printed digest in the
+# main Dockerfile.
 on:
   workflow_dispatch:
+  push:
+    paths: [minio/Dockerfile, .github/workflows/build-minio.yml]
 
 jobs:
   build:
