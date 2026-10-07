@@ -75,8 +75,13 @@ RUN minio --version && caddy version
 COPY --from=capweb /app /app
 
 # Next's image optimizer needs a glibc-native sharp (the copied one is musl).
-RUN cd /app && npm install --no-audit --no-fund sharp@0.34.5 \
-    && node -e "require('sharp'); console.log('sharp glibc OK')"
+# Installed in its own prefix: running npm in /app prunes every package that
+# Next's standalone output hoisted into /app/node_modules (including next itself,
+# which is what broke the 2026-10-06 build). NEXT_SHARP_PATH points Next here.
+RUN mkdir -p /opt/sharp && cd /opt/sharp \
+    && npm install --no-audit --no-fund --no-save sharp@0.34.5 \
+    && node -e "require('/opt/sharp/node_modules/sharp'); console.log('sharp glibc OK')" \
+    && cd /app/apps/web && node -e "require.resolve('next'); console.log('next resolves OK')"
 
 # Bundled media-server: copy the Bun runtime + the app. Both stages are glibc
 # (Debian/Ubuntu), so the native node-av addon is ABI-compatible; it uses the
