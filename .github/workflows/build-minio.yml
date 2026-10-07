@@ -28,12 +28,12 @@ jobs:
           context: minio
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/minio:RELEASE.2025-09-07T16-13-09Z
+          tags: ghcr.io/carlkho-minerva/minio:RELEASE.2025-09-07T16-13-09Z
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
       - name: Digest to pin
-        run: echo "ghcr.io/${{ github.repository_owner }}/minio@${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: echo "ghcr.io/carlkho-minerva/minio@${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Binary runs and reports the expected release
         run: |
           docker run --rm --platform linux/amd64 --entrypoint /usr/bin/minio \
-            "ghcr.io/${{ github.repository_owner }}/minio@${{ steps.build.outputs.digest }}" --version \
+            "ghcr.io/carlkho-minerva/minio@${{ steps.build.outputs.digest }}" --version \
             | tee /dev/stderr | grep -q 'RELEASE.2025-09-07T16-13-09Z.*07c3a429bfed433e49018cb0f78a52145d4bedeb'
