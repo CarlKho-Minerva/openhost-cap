@@ -20,7 +20,7 @@ WORKDIR /src
 # gen-ldflags wants the release time in UTC; this reproduces the official
 # "RELEASE.2025-09-07T16-13-09Z" version string.
 ARG MINIO_RELEASE_TIME=2025-09-07T16:13:09Z
-RUN ldflags="$(go run buildscripts/gen-ldflags.go "$MINIO_RELEASE_TIME")" \
+RUN ldflags="$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "$MINIO_RELEASE_TIME")" \
  && CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
     go build -tags kqueue -trimpath -ldflags "$ldflags" -o /out/minio .
 
