@@ -10,14 +10,14 @@
 # mysql-server, and reuse Cap's prebuilt (pure-JS) web app artifacts rather than
 # rebuilding the monorepo from source.
 
-# --- Cap web app: OUR fork's build (CarlKho-Minerva/cap @ carl/selfhost-2026-10) ---
+# --- Cap web app: OUR fork's build (CarlKho-Minerva/cap @ carl/selfhost-2026-10-23, a068de9, built 2026-10-23) ---
 # Built natively (amd64+arm64) by the fork's "Docker Build Web" GitHub Action from
 # apps/web/Dockerfile and pushed to ghcr. Differs from upstream CapSoftware/cap only
 # by the OpenHost self-host changes: trusted-proxy SSO auto-login (no email code) and
 # the "Cap Pro" upsell hidden off Cap Cloud (NEXT_PUBLIC_IS_CAP unset at build).
 # Pinned by the multi-arch index digest so a redeploy can't silently change Cap or
 # re-run migrations. To update: re-run the Action, then bump this digest deliberately.
-FROM ghcr.io/carlkho-minerva/cap-web@sha256:106c9175ae41fa469cd822fc5a5c393ad020f16c7f1b4f6ed232cdb3f553bbb8 AS capweb
+FROM ghcr.io/carlkho-minerva/cap-web@sha256:f14b58e84ae846210bcf61cbc320f26d6327b84da9d53f7a3e7ffe52e1df469d AS capweb
 
 # --- Cap's official media-server (Bun + FFmpeg): transcoding, HLS, thumbnails, Loom import ---
 # Pinned to the digest that was `:latest` as of 2026-10-06 (built 2026-09-24; see cap-web note above).
