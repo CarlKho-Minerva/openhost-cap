@@ -207,17 +207,15 @@ curl -s -o /dev/null -w '/api/desktop 401? %{http_code}\n' \
 curl -s -w ' <- %{http_code}\n' "$H/_healthz"     # expect: ok <- 200
 ```
 
-Then prove owner sign-in, in-container, both ways. The first must print a
-`next-auth.session-token` cookie; the second (straight to Next, no proxy secret)
-must not:
+Then prove owner sign-in, in-container. Through Caddy must give a session;
+straight to Next (no secret, or a forged one) must not:
 
 ```sh
-oh app ssh cap 'for target in 127.0.0.1:8080 127.0.0.1:3000; do
-  j=$(mktemp); c=$(curl -s -c "$j" -H "Host: cap.carl.selfhost.imbue.com" http://$target/api/auth/csrf | sed -E "s/.*\"csrfToken\":\"([^\"]+)\".*/\1/")
-  curl -s -o /dev/null -b "$j" -c "$j" -H "Host: cap.carl.selfhost.imbue.com" -H "x-openhost-is-owner: true" \
-    --data-urlencode "csrfToken=$c" --data-urlencode "json=true" http://$target/api/auth/callback/trusted-proxy
-  echo "$target session cookie: $(grep -c session-token "$j")"; rm -f "$j"; done'
-# expect: 127.0.0.1:8080 session cookie: 1   and   127.0.0.1:3000 session cookie: 0
+oh app ssh cap "cat > /tmp/authprobe.js && CAP_PUBLIC_HOST=cap.carl.selfhost.imbue.com node /tmp/authprobe.js; rm -f /tmp/authprobe.js" < scripts/authprobe.js
+# expect:
+# via caddy :8080              200 session=true
+# direct next :3000, no secret 401 session=false
+# direct next :3000, forged    401 session=false
 ```
 
 `/_healthz` is 503 for the first pass or two after a reload while the deep check
