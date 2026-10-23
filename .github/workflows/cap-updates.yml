@@ -16,6 +16,12 @@ permissions:
   pull-requests: write
   issues: write
 
+env:
+  # The fork branch the pinned cap-web image is built from. Bump it whenever a
+  # new self-host branch is cut (it was stuck on carl/openhost-selfhost until
+  # 2026-10-23, so the issue counted from July).
+  SELFHOST_BRANCH: carl/selfhost-2026-10-23
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -28,10 +34,10 @@ jobs:
           set -euo pipefail
           git clone --quiet --filter=blob:none https://github.com/CarlKho-Minerva/cap.git fork
           cd fork
-          git checkout --quiet carl/openhost-selfhost
+          git checkout --quiet "$SELFHOST_BRANCH"
           git remote add upstream https://github.com/CapSoftware/cap.git
           git fetch --quiet --no-tags upstream main
-          echo "behind=$(git rev-list --count carl/openhost-selfhost..upstream/main)" >> "$GITHUB_OUTPUT"
+          echo "behind=$(git rev-list --count "$SELFHOST_BRANCH"..upstream/main)" >> "$GITHUB_OUTPUT"
 
       - name: Open or refresh the upstream issue
         if: steps.up.outputs.behind != '0'
@@ -41,7 +47,7 @@ jobs:
           set -euo pipefail
           TITLE="Cap upstream has new commits"
           printf '%s\n' \
-            "Upstream **CapSoftware/cap** is **${{ steps.up.outputs.behind }} commit(s)** ahead of our self-host branch \`carl/openhost-selfhost\`." \
+            "Upstream **CapSoftware/cap** is **${{ steps.up.outputs.behind }} commit(s)** ahead of our self-host branch \`${SELFHOST_BRANCH}\`." \
             "" \
             "Pull it in:" \
             "1. In the fork (CarlKho-Minerva/cap) run the **Sync upstream Cap** workflow, then merge the PR it opens." \

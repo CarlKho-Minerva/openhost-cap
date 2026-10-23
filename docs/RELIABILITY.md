@@ -159,16 +159,11 @@ fails**, so the status check afterwards is not optional.
    `Getting presigned URL for part` in the last minute.
 3. Record the rollback point: `oh app status cap` prints the deployed git sha.
    Write it down.
-4. Confirm the pinned digests still resolve, so the rebuild cannot fail on a
-   fetch:
+4. Confirm every `FROM ...@sha256:` in `Dockerfile` still resolves (a rotted
+   pin fails the rebuild, see failure mode 2). Take a DB backup first when the
+   cap-web image changes:
    ```sh
-   for ref in \
-     ghcr.io/carlkho-minerva/cap-web@sha256:a6808d48... \
-     ghcr.io/capsoftware/cap-media-server@sha256:43587203... \
-     quay.io/minio/minio@sha256:14cea493... \
-     docker.io/library/caddy@sha256:226d1f05... \
-     docker.io/library/node@sha256:2fe369e9... ; do
-     echo "$ref"; done   # then pull each, or trust the digest and accept a rebuild retry
+   oh app ssh cap 'mysqldump --protocol=tcp -h127.0.0.1 -ucap -p"$(grep ^MYSQL_PASSWORD= /data/app_data/cap/secrets.env | cut -d= -f2)" --single-transaction --no-tablespaces cap | gzip > /data/app_data/cap/backups/cap-$(date +%F)-pre-upgrade.sql.gz'
    ```
 5. `caddy validate --config Caddyfile --adapter caddyfile` and
    `shellcheck -s bash entrypoint.sh healthcheck.sh` both pass locally.
@@ -210,6 +205,19 @@ curl -s -o /dev/null -w '/api/desktop 401? %{http_code}\n' \
 
 # 5. the new healthz is honest and says ok
 curl -s -w ' <- %{http_code}\n' "$H/_healthz"     # expect: ok <- 200
+```
+
+Then prove owner sign-in, in-container, both ways. The first must print a
+`next-auth.session-token` cookie; the second (straight to Next, no proxy secret)
+must not:
+
+```sh
+oh app ssh cap 'for target in 127.0.0.1:8080 127.0.0.1:3000; do
+  j=$(mktemp); c=$(curl -s -c "$j" -H "Host: cap.carl.selfhost.imbue.com" http://$target/api/auth/csrf | sed -E "s/.*\"csrfToken\":\"([^\"]+)\".*/\1/")
+  curl -s -o /dev/null -b "$j" -c "$j" -H "Host: cap.carl.selfhost.imbue.com" -H "x-openhost-is-owner: true" \
+    --data-urlencode "csrfToken=$c" --data-urlencode "json=true" http://$target/api/auth/callback/trusted-proxy
+  echo "$target session cookie: $(grep -c session-token "$j")"; rm -f "$j"; done'
+# expect: 127.0.0.1:8080 session cookie: 1   and   127.0.0.1:3000 session cookie: 0
 ```
 
 `/_healthz` is 503 for the first pass or two after a reload while the deep check

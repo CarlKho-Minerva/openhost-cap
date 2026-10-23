@@ -44,6 +44,13 @@ if [ ! -f "$SECRETS" ]; then
     echo "MEDIA_SERVER_WEBHOOK_SECRET=$(gen 32)"
   } > "$SECRETS"
 fi
+# Added 2026-10-23: the trusted-proxy provider (PR #2060) now refuses to register
+# without a shared secret, so existing instances get one appended on first boot.
+if ! grep -q '^TRUSTED_PROXY_AUTH_SECRET=.' "$SECRETS"; then
+  log "adding TRUSTED_PROXY_AUTH_SECRET to persistent secrets"
+  ( umask 077
+    echo "TRUSTED_PROXY_AUTH_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" >> "$SECRETS" )
+fi
 # shellcheck disable=SC1090
 set -a; . "$SECRETS"; set +a
 
@@ -176,6 +183,12 @@ export WORKFLOW_LOCAL_BASE_URL="http://127.0.0.1:3000"
 # build has NEXT_PUBLIC_IS_CAP unset, and the seed marks users onboarded.)
 export TRUSTED_PROXY_AUTH_HEADER="x-openhost-is-owner"
 export TRUSTED_PROXY_AUTH_EMAIL="${OPENHOST_OWNER_USERNAME:-owner}@${CAP_PUBLIC_HOST}"
+# Caddy (below) sends this as x-trusted-proxy-secret on every request it forwards
+# to Next, overwriting any client-sent copy. A request that reaches :3000 without
+# going through Caddy cannot sign in even if it forges x-openhost-is-owner.
+# Blank would silently disable owner sign-in, so refuse to boot instead.
+[ -n "${TRUSTED_PROXY_AUTH_SECRET:-}" ] || { log "FATAL: TRUSTED_PROXY_AUTH_SECRET is empty"; exit 1; }
+export TRUSTED_PROXY_AUTH_SECRET
 
 # --- Cap web. Runs migrations + S3 bucket setup itself on boot. ---
 log "starting Cap web — it will run DB migrations and create the S3 bucket"

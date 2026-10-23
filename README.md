@@ -35,11 +35,12 @@ OpenHost router (TLS + owner auth)
 ```
 
 - **Cap web** — our fork's build
-  ([`carlkho-minerva/cap-web`](https://github.com/CarlKho-Minerva/cap/tree/carl/openhost-selfhost),
-  built native amd64+arm64 by the fork's GitHub Action), run on a glibc base. Identical to
-  upstream [Cap](https://github.com/CapSoftware/cap) except for two self-host changes:
-  trusted-proxy SSO auto-login (owner signs in with no email code) and the "Cap Pro" upsell
-  hidden off Cap Cloud. Records in-browser via `getDisplayMedia`/`MediaRecorder`, converts to
+  ([`carlkho-minerva/cap-web`](https://github.com/CarlKho-Minerva/cap/tree/carl/selfhost-2026-10-23),
+  built native amd64+arm64 by the fork's GitHub Action), run on a glibc base. Upstream
+  [Cap](https://github.com/CapSoftware/cap) plus a small self-host layer: trusted-proxy SSO
+  auto-login (owner signs in with no email code), the "Cap Pro" upsell hidden, MySQL
+  analytics, guest comments, and a transcript endpoint. See
+  [docs/UPGRADING.md](docs/UPGRADING.md) for the full list and how to move to a newer Cap. Records in-browser via `getDisplayMedia`/`MediaRecorder`, converts to
   MP4 client-side, uploads to S3.
 - **MySQL 8** — the database Cap officially targets (its migrations use JSON-function
   generated columns that MariaDB rejects). Cap runs its own migrations on boot.
@@ -73,28 +74,25 @@ Update after pushing changes:
 
 ```bash
 oh app reload cap --update --wait
+oh app status cap   # must say "running": reload --wait exits 0 on a failed build
 ```
+
+To move to a newer upstream Cap, follow [docs/UPGRADING.md](docs/UPGRADING.md).
 
 ## First login
 
-There are two gates, both one-time (sessions persist afterwards):
+Sign in to your OpenHost zone as the space owner. That is the only login: the router
+marks your requests with `X-OpenHost-Is-Owner: true`, Caddy adds the per-instance
+`X-Trusted-Proxy-Secret` (generated into `secrets.env` on first boot), and Cap's login
+page signs you into the seeded owner account automatically. Nobody else can reach the
+dashboard; share links (`/s/<id>`, `/embed/<id>`) stay public.
 
-1. **Zone login** — the OpenHost router redirects you to your zone's login. Sign in as
-   the space owner. This is what keeps the app private to you.
-2. **Cap login** — Cap has its own email login on top. Enter your email; since no email
-   provider is configured, Cap prints the 6-digit code to the container logs instead of
-   emailing it. Grab it with:
+If the automatic sign-in ever stops working, Cap's email-code login still exists.
+With no email provider configured, the code is printed to the logs:
 
-   ```bash
-   oh app logs cap | grep "Code:" | tail -1
-   ```
-
-Then, on the onboarding screens, click **"Skip to dashboard"** and start recording in the
-browser — no desktop app needed.
-
-> **Nicer login (optional):** set `RESEND_API_KEY` + `RESEND_FROM_DOMAIN` in `entrypoint.sh`
-> to have Cap email the code instead of logging it. The log-code path is a fine default for
-> a single-owner instance since you rarely re-auth.
+```bash
+oh app logs cap | grep "Code:" | tail -1
+```
 
 ## Self-hosting notes (Pro, onboarding, desktop app)
 

@@ -31,6 +31,7 @@
 				}
 				request>headers>Cookie delete
 				request>headers>Authorization delete
+				request>headers>X-Trusted-Proxy-Secret delete
 			}
 		}
 	}
@@ -93,6 +94,9 @@
 			header_up Host {$CAP_PUBLIC_HOST}
 			header_up X-Forwarded-Proto https
 			header_up X-Forwarded-Host {$CAP_PUBLIC_HOST}
+			# Trusted-proxy auth (fork + PR #2060): proves the request came through
+			# this proxy. `header_up` replaces any client-sent copy.
+			header_up X-Trusted-Proxy-Secret {$TRUSTED_PROXY_AUTH_SECRET}
 		}
 	}
 }
